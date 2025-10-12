@@ -15,6 +15,12 @@ jQuery(document).ready(function ($) {
             alert('Please select a ZIP file to upload.');
             return;
         }
+        
+        // New validation for story selection
+        if ($('#fictioneer_story_id').val() === '') {
+            alert('Please select a Fictioneer Story.');
+            return;
+        }
 
         submitButton.prop('disabled', true).val('Uploading...');
         processingArea.show();

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ZIP Content Replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, and dry run mode.
- * Version: 2.2.1
+ * Version: 2.3
  * Author: MarineTL
  */
 
@@ -23,7 +23,7 @@ class ZipContentReplacer_Enhanced {
     public function enqueue_admin_scripts($hook) {
         if ($hook !== 'tools_page_zip-content-replacer') return;
 
-        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], '2.2.1', true);
+        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], '2.3', true);
         wp_localize_script('zip-replacer-ajax', 'zipReplacerAjax', [
             'ajaxUrl'     => admin_url('admin-ajax.php'),
             'uploadNonce' => wp_create_nonce('zip_replacer_upload_nonce'),
@@ -38,8 +38,8 @@ class ZipContentReplacer_Enhanced {
     public function admin_page() {
         ?>
         <div class="wrap">
-            <h1>ZIP Content Replacer</h1>
-            <p>This tool updates existing posts with content from files in a ZIP archive. The post is matched by its title, which must be identical to the filename (without extension).</p>
+            <h1>ZIP Content Replacer for Fictioneer Chapters</h1>
+            <p>This tool updates Fictioneer chapter content with text from files in a ZIP archive. Chapters are matched by their title (which must be identical to the filename without extension) and must belong to the selected Fictioneer Story.</p>
             
             <form id="zip-replacer-form" method="post" enctype="multipart/form-data">
                 <table class="form-table">
@@ -48,16 +48,30 @@ class ZipContentReplacer_Enhanced {
                         <td><input type="file" id="zip_file" name="zip_file" accept=".zip" required></td>
                     </tr>
                     <tr valign="top">
-                        <th scope="row"><label for="post_type">Post Type</label></th>
+                        <th scope="row"><label for="fictioneer_story_id">Select Fictioneer Story</label></th>
                         <td>
-                            <select name="post_type" id="post_type">
+                            <select name="fictioneer_story_id" id="fictioneer_story_id" required>
+                                <option value="">-- Select a Story --</option>
                                 <?php
-                                $post_types = get_post_types(['public' => true], 'objects');
-                                foreach ($post_types as $type) {
-                                    echo "<option value='{$type->name}'>{$type->labels->name}</option>";
+                                $stories = get_posts([
+                                    'post_type'      => 'fcn_story',
+                                    'posts_per_page' => -1, // Get all stories
+                                    'orderby'        => 'title',
+                                    'order'          => 'ASC',
+                                    'fields'         => 'ids' // Get only IDs initially
+                                ]);
+
+                                if (!empty($stories)) {
+                                    foreach ($stories as $story_id) {
+                                        $story_title = get_the_title($story_id);
+                                        echo "<option value='{$story_id}'>{$story_title} (ID: {$story_id})</option>";
+                                    }
+                                } else {
+                                    echo "<option value='' disabled>No Fictioneer Stories found.</option>";
                                 }
                                 ?>
                             </select>
+                            <p class="description">Only chapters belonging to this story will be considered for updates.</p>
                         </td>
                     </tr>
                     <tr valign="top">
@@ -100,6 +114,14 @@ class ZipContentReplacer_Enhanced {
              wp_send_json_error(['message' => 'File upload error. Please try again. Code: ' . $_FILES['zip_file']['error']]);
         }
         
+        if (!isset($_POST['fictioneer_story_id']) || empty($_POST['fictioneer_story_id'])) {
+             wp_send_json_error(['message' => 'Please select a Fictioneer Story.']);
+        }
+        $fictioneer_story_id = intval($_POST['fictioneer_story_id']);
+        if ($fictioneer_story_id <= 0 || get_post_type($fictioneer_story_id) !== 'fcn_story') {
+             wp_send_json_error(['message' => 'Invalid Fictioneer Story selected.']);
+        }
+
         $file = $_FILES['zip_file'];
         if ($file['size'] > $this->max_file_size) {
             wp_send_json_error(['message' => 'Error: File is larger than the allowed limit of 10MB.']);
@@ -120,10 +142,11 @@ class ZipContentReplacer_Enhanced {
 
         $user_id = get_current_user_id();
         $settings = [
-            'zip_path'    => $zip_path,
-            'post_type'   => sanitize_text_field($_POST['post_type']),
-            'batch_size'  => intval($_POST['batch_size']),
-            'is_dry_run'  => isset($_POST['dry_run']),
+            'zip_path'            => $zip_path,
+            'post_type'           => 'fcn_chapter', // Hardcoded
+            'fictioneer_story_id' => $fictioneer_story_id,
+            'batch_size'          => intval($_POST['batch_size']),
+            'is_dry_run'          => isset($_POST['dry_run']),
         ];
         // Store settings in a transient with a 1-hour expiry
         set_transient(self::SETTINGS_TRANSIENT_KEY . $user_id, $settings, HOUR_IN_SECONDS);
@@ -138,11 +161,12 @@ class ZipContentReplacer_Enhanced {
         $settings = get_transient(self::SETTINGS_TRANSIENT_KEY . $user_id); // Retrieve settings from transient
         
         $zip_path = $settings['zip_path'] ?? null;
-        $post_type = $settings['post_type'] ?? null;
+        $post_type = $settings['post_type'] ?? 'fcn_chapter'; // Should always be fcn_chapter now
+        $fictioneer_story_id = $settings['fictioneer_story_id'] ?? null;
         $batch_size = $settings['batch_size'] ?? 10;
         $is_dry_run = $settings['is_dry_run'] ?? false;
         
-        if (!$zip_path || !file_exists($zip_path) || !$post_type) {
+        if (!$zip_path || !file_exists($zip_path) || !$fictioneer_story_id) {
             wp_send_json_error(['message' => 'Session expired or file not found. Please start over.']);
         }
 
@@ -186,7 +210,24 @@ class ZipContentReplacer_Enhanced {
 
 
             $post_title = pathinfo($filename, PATHINFO_FILENAME);
-            $post = get_page_by_title($post_title, OBJECT, $post_type);
+            
+            // --- MODIFIED POST FETCHING LOGIC ---
+            $args = [
+                'post_type'      => $post_type,
+                'title'          => $post_title,
+                'posts_per_page' => 1,
+                'meta_query'     => [
+                    [
+                        'key'     => 'fictioneer_chapter_story',
+                        'value'   => $fictioneer_story_id,
+                        'compare' => '=',
+                        'type'    => 'NUMERIC'
+                    ]
+                ]
+            ];
+            $chapters = get_posts($args);
+            $post = !empty($chapters) ? $chapters[0] : null;
+            // --- END MODIFIED POST FETCHING LOGIC ---
 
             if ($post) {
                 if (!$is_dry_run) {
@@ -196,17 +237,17 @@ class ZipContentReplacer_Enhanced {
                         'post_content' => wp_kses_post(wpautop($content))
                     ]);
                     if (is_wp_error($updated)) {
-                        $logs[] = "ERROR: Failed to update post '{$post_title}' (ID: {$post->ID}). WP_Error: {$updated->get_error_message()}.";
+                        $logs[] = "ERROR: Failed to update chapter '{$post_title}' (ID: {$post->ID}). WP_Error: {$updated->get_error_message()}.";
                     } elseif ($updated === 0) {
-                        $logs[] = "INFO: Post '{$post_title}' (ID: {$post->ID}) found but no changes were made (content might be identical).";
+                        $logs[] = "INFO: Chapter '{$post_title}' (ID: {$post->ID}) found for story ID {$fictioneer_story_id} but no content changes were detected.";
                     } else {
-                        $logs[] = "SUCCESS: Updated post '{$post_title}' (ID: {$post->ID}).";
+                        $logs[] = "SUCCESS: Updated chapter '{$post_title}' (ID: {$post->ID}) for story ID {$fictioneer_story_id}.";
                     }
                 } else {
-                    $logs[] = "[DRY RUN] SUCCESS: Would update post '{$post_title}' (ID: {$post->ID}).";
+                    $logs[] = "[DRY RUN] SUCCESS: Would update chapter '{$post_title}' (ID: {$post->ID}) for story ID {$fictioneer_story_id}.";
                 }
             } else {
-                 $logs[] = "INFO: Skipped - No post found with title '{$post_title}' in post type '{$post_type}'.";
+                 $logs[] = "INFO: Skipped - No chapter found with title '{$post_title}' belonging to story ID {$fictioneer_story_id}.";
             }
         }
 
