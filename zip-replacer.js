@@ -16,7 +16,7 @@ jQuery(document).ready(function ($) {
             return;
         }
         
-        // New validation for story selection
+        // Validation for story selection
         if ($('#fictioneer_story_id').val() === '') {
             alert('Please select a Fictioneer Story.');
             return;
@@ -32,7 +32,7 @@ jQuery(document).ready(function ($) {
         formData.append('action', 'handle_zip_upload_ajax');
         formData.append('nonce', zipReplacerAjax.uploadNonce);
 
-        // 1. Initial AJAX call to upload the file and set up transients
+        // 1. Initial AJAX call to upload the file and set up options
         $.ajax({
             url: zipReplacerAjax.ajaxUrl,
             method: 'POST',

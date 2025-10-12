@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ZIP Content Replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, and dry run mode.
- * Version: 2.3
+ * Version: 2.3.1
  * Author: MarineTL
  */
 
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit;
 class ZipContentReplacer_Enhanced {
     private $max_file_size = 10485760; // 10MB
     private $allowed_extensions = ['txt', 'md', 'html'];
-    private const SETTINGS_TRANSIENT_KEY = 'zip_replacer_settings_'; // Base key for user-specific transient
+    private const SETTINGS_OPTION_KEY = 'zip_replacer_settings_'; // Base key for user-specific option
 
     public function __construct() {
         add_action('admin_menu', array($this, 'add_admin_menu'));
@@ -23,7 +23,7 @@ class ZipContentReplacer_Enhanced {
     public function enqueue_admin_scripts($hook) {
         if ($hook !== 'tools_page_zip-content-replacer') return;
 
-        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], '2.3', true);
+        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], '2.3.1', true);
         wp_localize_script('zip-replacer-ajax', 'zipReplacerAjax', [
             'ajaxUrl'     => admin_url('admin-ajax.php'),
             'uploadNonce' => wp_create_nonce('zip_replacer_upload_nonce'),
@@ -143,13 +143,13 @@ class ZipContentReplacer_Enhanced {
         $user_id = get_current_user_id();
         $settings = [
             'zip_path'            => $zip_path,
-            'post_type'           => 'fcn_chapter', // Hardcoded
+            'post_type'           => 'fcn_chapter', // Hardcoded for Fictioneer Chapters
             'fictioneer_story_id' => $fictioneer_story_id,
             'batch_size'          => intval($_POST['batch_size']),
             'is_dry_run'          => isset($_POST['dry_run']),
         ];
-        // Store settings in a transient with a 1-hour expiry
-        set_transient(self::SETTINGS_TRANSIENT_KEY . $user_id, $settings, HOUR_IN_SECONDS);
+        // Store settings in a regular option
+        update_option(self::SETTINGS_OPTION_KEY . $user_id, $settings);
 
         wp_send_json_success(['message' => 'File uploaded successfully. Starting process...']);
     }
@@ -158,7 +158,8 @@ class ZipContentReplacer_Enhanced {
         check_ajax_referer('zip_replacer_process_nonce', 'nonce');
 
         $user_id = get_current_user_id();
-        $settings = get_transient(self::SETTINGS_TRANSIENT_KEY . $user_id); // Retrieve settings from transient
+        // Retrieve settings from regular option
+        $settings = get_option(self::SETTINGS_OPTION_KEY . $user_id); 
         
         $zip_path = $settings['zip_path'] ?? null;
         $post_type = $settings['post_type'] ?? 'fcn_chapter'; // Should always be fcn_chapter now
@@ -211,7 +212,7 @@ class ZipContentReplacer_Enhanced {
 
             $post_title = pathinfo($filename, PATHINFO_FILENAME);
             
-            // --- MODIFIED POST FETCHING LOGIC ---
+            // Fetch chapters based on title AND story ID
             $args = [
                 'post_type'      => $post_type,
                 'title'          => $post_title,
@@ -227,7 +228,6 @@ class ZipContentReplacer_Enhanced {
             ];
             $chapters = get_posts($args);
             $post = !empty($chapters) ? $chapters[0] : null;
-            // --- END MODIFIED POST FETCHING LOGIC ---
 
             if ($post) {
                 if (!$is_dry_run) {
@@ -257,11 +257,13 @@ class ZipContentReplacer_Enhanced {
 
         if ($remaining === 0) {
             if (file_exists($zip_path)) unlink($zip_path);
-            delete_transient(self::SETTINGS_TRANSIENT_KEY . $user_id); // Delete transient after completion
+            // Delete the option after completion
+            delete_option(self::SETTINGS_OPTION_KEY . $user_id); 
             $logs[] = "-----> All files processed. Cleanup complete. <-----";
         } else {
-             // Re-set the transient to extend its life for the next batch
-            set_transient(self::SETTINGS_TRANSIENT_KEY . $user_id, $settings, HOUR_IN_SECONDS);
+            // Re-update the option to persist current state for the next batch
+            // This is crucial to ensure the option isn't lost for subsequent batches
+            update_option(self::SETTINGS_OPTION_KEY . $user_id, $settings);
         }
 
         wp_send_json_success([
