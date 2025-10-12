@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ZIP Content Replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, and dry run mode.
- * Version: 2.2
+ * Version: 2.2.1
  * Author: MarineTL
  */
 
@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) exit;
 class ZipContentReplacer_Enhanced {
     private $max_file_size = 10485760; // 10MB
     private $allowed_extensions = ['txt', 'md', 'html'];
+    private const SETTINGS_TRANSIENT_KEY = 'zip_replacer_settings_'; // Base key for user-specific transient
 
     public function __construct() {
         add_action('admin_menu', array($this, 'add_admin_menu'));
@@ -22,7 +23,7 @@ class ZipContentReplacer_Enhanced {
     public function enqueue_admin_scripts($hook) {
         if ($hook !== 'tools_page_zip-content-replacer') return;
 
-        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], '2.2', true);
+        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], '2.2.1', true);
         wp_localize_script('zip-replacer-ajax', 'zipReplacerAjax', [
             'ajaxUrl'     => admin_url('admin-ajax.php'),
             'uploadNonce' => wp_create_nonce('zip_replacer_upload_nonce'),
@@ -96,7 +97,7 @@ class ZipContentReplacer_Enhanced {
         }
 
         if (!isset($_FILES['zip_file']) || $_FILES['zip_file']['error'] !== UPLOAD_ERR_OK) {
-             wp_send_json_error(['message' => 'File upload error. Please try again.']);
+             wp_send_json_error(['message' => 'File upload error. Please try again. Code: ' . $_FILES['zip_file']['error']]);
         }
         
         $file = $_FILES['zip_file'];
@@ -109,7 +110,12 @@ class ZipContentReplacer_Enhanced {
         $zip_path = $upload_dir['path'] . '/' . $zip_filename;
         
         if (!move_uploaded_file($file['tmp_name'], $zip_path)) {
-            wp_send_json_error(['message' => 'Error: Could not move uploaded file.']);
+            $last_error = error_get_last();
+            $error_message = 'Error: Could not move uploaded file.';
+            if (isset($last_error['message'])) {
+                $error_message .= ' Details: ' . $last_error['message'];
+            }
+            wp_send_json_error(['message' => $error_message]);
         }
 
         $user_id = get_current_user_id();
@@ -119,7 +125,8 @@ class ZipContentReplacer_Enhanced {
             'batch_size'  => intval($_POST['batch_size']),
             'is_dry_run'  => isset($_POST['dry_run']),
         ];
-        update_option("zip_replacer_settings_{$user_id}", $settings);
+        // Store settings in a transient with a 1-hour expiry
+        set_transient(self::SETTINGS_TRANSIENT_KEY . $user_id, $settings, HOUR_IN_SECONDS);
 
         wp_send_json_success(['message' => 'File uploaded successfully. Starting process...']);
     }
@@ -128,7 +135,7 @@ class ZipContentReplacer_Enhanced {
         check_ajax_referer('zip_replacer_process_nonce', 'nonce');
 
         $user_id = get_current_user_id();
-        $settings = get_option("zip_replacer_settings_{$user_id}");
+        $settings = get_transient(self::SETTINGS_TRANSIENT_KEY . $user_id); // Retrieve settings from transient
         
         $zip_path = $settings['zip_path'] ?? null;
         $post_type = $settings['post_type'] ?? null;
@@ -164,17 +171,37 @@ class ZipContentReplacer_Enhanced {
                 continue;
             }
             
+            // Convert encoding if not UTF-8
             if (!mb_check_encoding($content, 'UTF-8')) {
-                $content = mb_convert_encoding($content, 'UTF-8');
+                // Attempt to detect and convert, fallback to a simpler conversion
+                $detected_encoding = mb_detect_encoding($content, 'UTF-8, ISO-8859-1, Windows-1252', true);
+                if ($detected_encoding && $detected_encoding !== 'UTF-8') {
+                    $content = mb_convert_encoding($content, 'UTF-8', $detected_encoding);
+                    $logs[] = "INFO: Converted encoding of '{$filename}' from {$detected_encoding} to UTF-8.";
+                } else {
+                    $content = mb_convert_encoding($content, 'UTF-8'); // Fallback conversion
+                    $logs[] = "INFO: Attempted simple encoding conversion for '{$filename}'.";
+                }
             }
+
 
             $post_title = pathinfo($filename, PATHINFO_FILENAME);
             $post = get_page_by_title($post_title, OBJECT, $post_type);
 
             if ($post) {
                 if (!$is_dry_run) {
-                    wp_update_post(['ID' => $post->ID, 'post_content' => wpautop($content)]);
-                    $logs[] = "SUCCESS: Updated post '{$post_title}' (ID: {$post->ID}).";
+                    // Apply wp_kses_post for security before updating
+                    $updated = wp_update_post([
+                        'ID' => $post->ID,
+                        'post_content' => wp_kses_post(wpautop($content))
+                    ]);
+                    if (is_wp_error($updated)) {
+                        $logs[] = "ERROR: Failed to update post '{$post_title}' (ID: {$post->ID}). WP_Error: {$updated->get_error_message()}.";
+                    } elseif ($updated === 0) {
+                        $logs[] = "INFO: Post '{$post_title}' (ID: {$post->ID}) found but no changes were made (content might be identical).";
+                    } else {
+                        $logs[] = "SUCCESS: Updated post '{$post_title}' (ID: {$post->ID}).";
+                    }
                 } else {
                     $logs[] = "[DRY RUN] SUCCESS: Would update post '{$post_title}' (ID: {$post->ID}).";
                 }
@@ -189,8 +216,11 @@ class ZipContentReplacer_Enhanced {
 
         if ($remaining === 0) {
             if (file_exists($zip_path)) unlink($zip_path);
-            delete_option("zip_replacer_settings_{$user_id}");
+            delete_transient(self::SETTINGS_TRANSIENT_KEY . $user_id); // Delete transient after completion
             $logs[] = "-----> All files processed. Cleanup complete. <-----";
+        } else {
+             // Re-set the transient to extend its life for the next batch
+            set_transient(self::SETTINGS_TRANSIENT_KEY . $user_id, $settings, HOUR_IN_SECONDS);
         }
 
         wp_send_json_success([

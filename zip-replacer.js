@@ -36,7 +36,7 @@ jQuery(document).ready(function ($) {
             dataType: 'json',
             success: function (response) {
                 if (response.success) {
-                    logContainer.append('<div>' + response.data.message + '</div>');
+                    logContainer.append($('<div>').text(response.data.message)); // Fixed sanitization
                     startProcessing(0); // 2. Start the batch processing
                 } else {
                     handleFatalError('Upload Error: ' + response.data.message);
@@ -78,7 +78,7 @@ jQuery(document).ready(function ($) {
                     // Append logs to the container
                     if (response.data.logs && response.data.logs.length > 0) {
                         response.data.logs.forEach(function(log) {
-                            logContainer.append('<div>' + log.replace(/</g, "<").replace(/>/g, ">") + '</div>');
+                            logContainer.append($('<div>').text(log)); // Fixed sanitization
                         });
                         logContainer.scrollTop(logContainer[0].scrollHeight); // Auto-scroll
                     }
@@ -89,7 +89,7 @@ jQuery(document).ready(function ($) {
                         let finalMessage = response.data.is_dry_run ? 'Dry run complete!' : 'Processing complete!';
                         progressText.text(finalMessage);
                         processingTitle.text('Finished!');
-                        submitButton.prop('disabled', false).val('Upload and Process');
+                        submitButton.prop('disabled', false).val('Upload and Process'); // Original behavior
                     }
                 } else {
                     handleFatalError('Error: ' + response.data.message);
@@ -110,7 +110,7 @@ jQuery(document).ready(function ($) {
     
     function handleFatalError(message) {
         progressText.text(message).css('color', 'red');
-        logContainer.append('<div style="color:red; font-weight:bold;">' + message.replace(/</g, "<").replace(/>/g, ">") + '</div>');
+        logContainer.append($('<div style="color:red; font-weight:bold;">').text(message)); // Fixed sanitization
         submitButton.prop('disabled', false).val('Try Again');
     }
 });
