@@ -14,7 +14,6 @@ jQuery(document).ready(function ($) {
     let startTime = null;
     let processedItems = 0;
 
-    // Check for resume session on page load
     if (resumeBtn.length > 0) {
         resumeBtn.on('click', function() {
             $.ajax({
@@ -53,13 +52,11 @@ jQuery(document).ready(function ($) {
     form.on('submit', function (e) {
         e.preventDefault();
 
-        // Basic validation
         if ($('#zip_file')[0].files.length === 0) {
             alert('Please select a ZIP file to upload.');
             return;
         }
 
-        // Validation for story selection
         if ($('#fictioneer_story_id').val() === '') {
             alert('Please select a Fictioneer Story.');
             return;
@@ -80,7 +77,6 @@ jQuery(document).ready(function ($) {
         startTime = Date.now();
         processedItems = 0;
 
-        // 1. Initial AJAX call to upload the file and set up settings
         $.ajax({
             url: zipReplacerAjax.ajaxUrl,
             method: 'POST',
@@ -93,7 +89,6 @@ jQuery(document).ready(function ($) {
                     logContainer.append($('<div>').html('<span style="color: green;">✅ ' + response.data.message + '</span>'));
                     logContainer.append($('<div>').html(''));
 
-                    // Start batch processing
                     processBatch(0, null);
                 } else {
                     logContainer.append($('<div>').html('<span style="color: red;">❌ Error: ' + response.data.message + '</span>'));
@@ -127,16 +122,14 @@ jQuery(document).ready(function ($) {
 
                     processedItems = processed;
 
-                    // Update progress bar
                     const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
                     progressFill.css('width', percentage + '%');
                     progressText.text(percentage + '% complete (' + processed + ' / ' + total + ' files processed, ' + remaining + ' remaining)');
 
-                    // Calculate and display ETA
                     if (processed > 0 && remaining > 0) {
-                        const elapsed = (Date.now() - startTime) / 1000; // seconds
-                        const rate = processed / elapsed; // files per second
-                        const remainingTime = remaining / rate; // seconds
+                        const elapsed = (Date.now() - startTime) / 1000;
+                        const rate = processed / elapsed;
+                        const remainingTime = remaining / rate;
                         const minutes = Math.floor(remainingTime / 60);
                         const seconds = Math.round(remainingTime % 60);
                         
@@ -151,22 +144,18 @@ jQuery(document).ready(function ($) {
                         etaText.text('');
                     }
 
-                    // Update title for dry run
                     if (isDryRun) {
                         processingTitle.text('[DRY RUN MODE] Processing...');
-                        progressFill.css('background', '#f0ad4e'); // Orange for dry run
+                        progressFill.css('background', '#f0ad4e');
                     }
 
-                    // Append logs
                     if (data.logs && data.logs.length > 0) {
                         data.logs.forEach(function (log) {
                             logContainer.append($('<div>').html(log));
                         });
-                        // Auto-scroll to bottom
                         logContainer.scrollTop(logContainer[0].scrollHeight);
                     }
 
-                    // Continue with next batch or finish
                     if (remaining > 0) {
                         processBatch(data.next_offset, total);
                     } else {
@@ -190,7 +179,6 @@ jQuery(document).ready(function ($) {
         });
     }
 
-    // Export log functionality
     exportLogBtn.on('click', function() {
         const logText = logContainer.text();
         const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
