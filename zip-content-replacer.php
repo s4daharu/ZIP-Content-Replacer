@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ZIP Content Replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, and dry run mode.
- * Version: 2.3.1
+ * Version: 2.3.2
  * Author: MarineTL
  */
 
@@ -213,19 +213,21 @@ class ZipContentReplacer_Enhanced {
             $post_title = pathinfo($filename, PATHINFO_FILENAME);
             
             // Fetch chapters based on title AND story ID
-            $args = [
-                'post_type'      => $post_type,
-                'title'          => $post_title,
+            $args = array(
+                'post_type' => $post_type,
+                'title' => $post_title,
                 'posts_per_page' => 1,
-                'meta_query'     => [
-                    [
-                        'key'     => 'fictioneer_chapter_story',
-                        'value'   => $fictioneer_story_id,
+                'post_status' => array('publish', 'future', 'draft', 'pending'), // Support all editable statuses
+                'meta_query' => array(
+                    array(
+                        'key' => 'fictioneer_chapter_story',
+                        'value' => $fictioneer_story_id,
                         'compare' => '=',
-                        'type'    => 'NUMERIC'
-                    ]
-                ]
-            ];
+                        'type' => 'NUMERIC'
+                    )
+                )
+            );
+
             $chapters = get_posts($args);
             $post = !empty($chapters) ? $chapters[0] : null;
 
