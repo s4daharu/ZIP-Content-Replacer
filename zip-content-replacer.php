@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: ZIP Content Replacer
- * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, and dry run mode.
- * Version: 2.3.2
+ * Plugin Name: ZIP Content Replacer Enhanced
+ * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, dry run mode, and advanced features.
+ * Version: 3.0.0
  * Author: MarineTL
  */
 
@@ -11,23 +11,29 @@ if (!defined('ABSPATH')) exit;
 class ZipContentReplacer_Enhanced {
     private $max_file_size = 10485760; // 10MB
     private $allowed_extensions = ['txt', 'md', 'html'];
-    private const SETTINGS_OPTION_KEY = 'zip_replacer_settings_'; // Base key for user-specific option
+    private const SETTINGS_TRANSIENT_KEY = 'zip_replacer_settings_';
+    private const RATE_LIMIT_TRANSIENT = 'zip_replacer_rate_';
+    private const RESUME_TRANSIENT_KEY = 'zip_replacer_resume_';
+    private const CHAPTER_CACHE_KEY = 'zip_replacer_chapters_';
 
     public function __construct() {
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
         add_action('wp_ajax_handle_zip_upload_ajax', array($this, 'handle_zip_upload_ajax'));
         add_action('wp_ajax_process_zip_batch', array($this, 'process_zip_batch'));
+        add_action('wp_ajax_check_resume_session', array($this, 'check_resume_session'));
+        add_action('wp_ajax_resume_processing', array($this, 'resume_processing'));
     }
 
     public function enqueue_admin_scripts($hook) {
         if ($hook !== 'tools_page_zip-content-replacer') return;
 
-        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], '2.3.1', true);
+        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], '3.0.0', true);
         wp_localize_script('zip-replacer-ajax', 'zipReplacerAjax', [
             'ajaxUrl'     => admin_url('admin-ajax.php'),
             'uploadNonce' => wp_create_nonce('zip_replacer_upload_nonce'),
-            'processNonce'=> wp_create_nonce('zip_replacer_process_nonce')
+            'processNonce'=> wp_create_nonce('zip_replacer_process_nonce'),
+            'resumeNonce' => wp_create_nonce('zip_replacer_resume_nonce')
         ]);
     }
 
@@ -36,10 +42,21 @@ class ZipContentReplacer_Enhanced {
     }
 
     public function admin_page() {
+        $user_id = get_current_user_id();
+        $resume_session = get_transient(self::RESUME_TRANSIENT_KEY . $user_id);
         ?>
         <div class="wrap">
             <h1>ZIP Content Replacer for Fictioneer Chapters</h1>
-            <p>This tool updates Fictioneer chapter content with text from files in a ZIP archive. Chapters are matched by their title (which must be identical to the filename without extension) and must belong to the selected Fictioneer Story.</p>
+            <p>This tool updates Fictioneer chapter content with text from files in a ZIP archive. Chapters are matched by their title or slug and must belong to the selected Fictioneer Story.</p>
+            
+            <?php if ($resume_session): ?>
+            <div class="notice notice-info" style="padding: 15px; margin-bottom: 20px;">
+                <h3>⚠️ Incomplete Session Detected</h3>
+                <p>You have an incomplete processing session. Would you like to resume?</p>
+                <button type="button" id="resume-processing-btn" class="button button-primary">Resume Previous Operation</button>
+                <button type="button" id="cancel-resume-btn" class="button">Cancel & Start New</button>
+            </div>
+            <?php endif; ?>
             
             <form id="zip-replacer-form" method="post" enctype="multipart/form-data">
                 <table class="form-table">
@@ -55,16 +72,15 @@ class ZipContentReplacer_Enhanced {
                                 <?php
                                 $stories = get_posts([
                                     'post_type'      => 'fcn_story',
-                                    'posts_per_page' => -1, // Get all stories
+                                    'posts_per_page' => -1,
                                     'orderby'        => 'title',
                                     'order'          => 'ASC',
-                                    'fields'         => 'ids' // Get only IDs initially
+                                    'post_status'    => 'publish'
                                 ]);
 
                                 if (!empty($stories)) {
-                                    foreach ($stories as $story_id) {
-                                        $story_title = get_the_title($story_id);
-                                        echo "<option value='{$story_id}'>{$story_title} (ID: {$story_id})</option>";
+                                    foreach ($stories as $story) {
+                                        echo "<option value='{$story->ID}'>{$story->post_title} (ID: {$story->ID})</option>";
                                     }
                                 } else {
                                     echo "<option value='' disabled>No Fictioneer Stories found.</option>";
@@ -75,10 +91,24 @@ class ZipContentReplacer_Enhanced {
                         </td>
                     </tr>
                     <tr valign="top">
+                        <th scope="row"><label for="match_method">Match Method</label></th>
+                        <td>
+                            <label><input type="radio" name="match_method" value="title" checked> Match by Title</label><br>
+                            <label><input type="radio" name="match_method" value="slug"> Match by Slug (filename)</label>
+                            <p class="description">Choose how to match files to chapters. Title matching requires exact title match, slug matching uses the post slug.</p>
+                        </td>
+                    </tr>
+                    <tr valign="top">
                         <th scope="row"><label for="batch_size">Processing Options</label></th>
                         <td>
                             <input type="checkbox" id="dry_run" name="dry_run" value="1" checked> 
                             <label for="dry_run">Perform a Dry Run (preview changes without saving).</label>
+                            <br><br>
+                            <input type="checkbox" id="show_preview" name="show_preview" value="1"> 
+                            <label for="show_preview">Show content preview in dry run logs (first 150 characters).</label>
+                            <br><br>
+                            <input type="checkbox" id="backup_content" name="backup_content" value="1" checked> 
+                            <label for="backup_content">Backup original content before updating (allows undo).</label>
                             <br><br>
                             <label for="batch_size">Items per batch:</label>
                             <input type="number" id="batch_size" name="batch_size" value="10" min="1" max="100" style="width: 70px;">
@@ -90,12 +120,16 @@ class ZipContentReplacer_Enhanced {
             </form>
 
             <div id="zip-processing-area" style="display:none; margin-top:20px;">
-                 <h2 id="processing-title">Processing...</h2>
-                <div id="zip-progress-container" >
+                <h2 id="processing-title">Processing...</h2>
+                <div id="zip-progress-container">
                     <div id="zip-progress-bar" style="width:100%; background:#eee; border:1px solid #ccc; border-radius: 4px; overflow: hidden;">
                         <div id="zip-progress-fill" style="width:0%; height:24px; background:#46b450; transition: width 0.5s ease-in-out;"></div>
                     </div>
                     <p id="zip-progress-text" style="text-align: center; margin-top: 5px; font-weight: bold;">Waiting to start...</p>
+                    <p id="zip-eta-text" style="text-align: center; margin-top: 5px; color: #666; font-size: 14px;"></p>
+                </div>
+                <div style="margin: 10px 0;">
+                    <button type="button" id="export-log-btn" class="button" style="display:none;">📥 Download Report</button>
                 </div>
                 <h3>Log:</h3>
                 <div id="zip-process-log" style="height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; background: #fafafa; font-family: monospace; font-size: 12px; white-space: pre-wrap;"></div>
@@ -104,31 +138,90 @@ class ZipContentReplacer_Enhanced {
         <?php
     }
 
+    public function check_resume_session() {
+        check_ajax_referer('zip_replacer_resume_nonce', 'nonce');
+        $user_id = get_current_user_id();
+        $resume_data = get_transient(self::RESUME_TRANSIENT_KEY . $user_id);
+        
+        if ($resume_data) {
+            wp_send_json_success(['has_session' => true, 'data' => $resume_data]);
+        } else {
+            wp_send_json_success(['has_session' => false]);
+        }
+    }
+
+    public function resume_processing() {
+        check_ajax_referer('zip_replacer_resume_nonce', 'nonce');
+        $user_id = get_current_user_id();
+        $resume_data = get_transient(self::RESUME_TRANSIENT_KEY . $user_id);
+        
+        if (!$resume_data) {
+            wp_send_json_error(['message' => 'No resume session found.']);
+        }
+        
+        // Restore settings to transient
+        set_transient(self::SETTINGS_TRANSIENT_KEY . $user_id, $resume_data['settings'], 3600);
+        
+        wp_send_json_success([
+            'message' => 'Session restored. Resuming processing...',
+            'offset' => $resume_data['offset'],
+            'total' => $resume_data['total']
+        ]);
+    }
+
+    private function check_rate_limit($user_id) {
+        $key = self::RATE_LIMIT_TRANSIENT . $user_id;
+        $count = get_transient($key);
+        
+        if ($count && $count > 20) {
+            wp_send_json_error(['message' => 'Too many requests. Please wait 1 minute before trying again.']);
+        }
+        
+        set_transient($key, ($count ? $count + 1 : 1), 60);
+    }
+
     public function handle_zip_upload_ajax() {
         check_ajax_referer('zip_replacer_upload_nonce', 'nonce');
+        
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => 'Permissions error.']);
         }
 
+        $user_id = get_current_user_id();
+        $this->check_rate_limit($user_id);
+
         if (!isset($_FILES['zip_file']) || $_FILES['zip_file']['error'] !== UPLOAD_ERR_OK) {
-             wp_send_json_error(['message' => 'File upload error. Please try again. Code: ' . $_FILES['zip_file']['error']]);
+            wp_send_json_error(['message' => 'File upload error. Please try again. Code: ' . ($_FILES['zip_file']['error'] ?? 'unknown')]);
         }
         
         if (!isset($_POST['fictioneer_story_id']) || empty($_POST['fictioneer_story_id'])) {
-             wp_send_json_error(['message' => 'Please select a Fictioneer Story.']);
+            wp_send_json_error(['message' => 'Please select a Fictioneer Story.']);
         }
+
         $fictioneer_story_id = intval($_POST['fictioneer_story_id']);
         if ($fictioneer_story_id <= 0 || get_post_type($fictioneer_story_id) !== 'fcn_story') {
-             wp_send_json_error(['message' => 'Invalid Fictioneer Story selected.']);
+            wp_send_json_error(['message' => 'Invalid Fictioneer Story selected.']);
         }
 
         $file = $_FILES['zip_file'];
+        
+        // Enhanced MIME type validation
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+            
+            if ($mime !== 'application/zip' && $mime !== 'application/x-zip-compressed') {
+                wp_send_json_error(['message' => 'Invalid file type. Only ZIP files are allowed.']);
+            }
+        }
+
         if ($file['size'] > $this->max_file_size) {
             wp_send_json_error(['message' => 'Error: File is larger than the allowed limit of 10MB.']);
         }
         
         $upload_dir = wp_upload_dir();
-        $zip_filename = wp_unique_filename($upload_dir['path'], 'zip_content_temp.zip');
+        $zip_filename = wp_unique_filename($upload_dir['path'], 'zip_content_temp_' . time() . '.zip');
         $zip_path = $upload_dir['path'] . '/' . $zip_filename;
         
         if (!move_uploaded_file($file['tmp_name'], $zip_path)) {
@@ -137,19 +230,28 @@ class ZipContentReplacer_Enhanced {
             if (isset($last_error['message'])) {
                 $error_message .= ' Details: ' . $last_error['message'];
             }
+            error_log("ZIP Replacer: Upload failed - {$error_message}");
             wp_send_json_error(['message' => $error_message]);
         }
 
-        $user_id = get_current_user_id();
+        $match_method = isset($_POST['match_method']) ? sanitize_text_field($_POST['match_method']) : 'title';
+        
         $settings = [
             'zip_path'            => $zip_path,
-            'post_type'           => 'fcn_chapter', // Hardcoded for Fictioneer Chapters
+            'post_type'           => 'fcn_chapter',
             'fictioneer_story_id' => $fictioneer_story_id,
             'batch_size'          => intval($_POST['batch_size']),
             'is_dry_run'          => isset($_POST['dry_run']),
+            'show_preview'        => isset($_POST['show_preview']),
+            'backup_content'      => isset($_POST['backup_content']),
+            'match_method'        => $match_method
         ];
-        // Store settings in a regular option
-        update_option(self::SETTINGS_OPTION_KEY . $user_id, $settings);
+
+        // Use transient with 1 hour expiration
+        set_transient(self::SETTINGS_TRANSIENT_KEY . $user_id, $settings, 3600);
+
+        // Clear any previous resume session
+        delete_transient(self::RESUME_TRANSIENT_KEY . $user_id);
 
         wp_send_json_success(['message' => 'File uploaded successfully. Starting process...']);
     }
@@ -158,16 +260,25 @@ class ZipContentReplacer_Enhanced {
         check_ajax_referer('zip_replacer_process_nonce', 'nonce');
 
         $user_id = get_current_user_id();
-        // Retrieve settings from regular option
-        $settings = get_option(self::SETTINGS_OPTION_KEY . $user_id); 
+        $this->check_rate_limit($user_id);
+
+        $settings = get_transient(self::SETTINGS_TRANSIENT_KEY . $user_id);
         
+        if (false === $settings) {
+            wp_send_json_error(['message' => 'Session expired. Please restart the upload process.']);
+        }
+
         $zip_path = $settings['zip_path'] ?? null;
-        $post_type = $settings['post_type'] ?? 'fcn_chapter'; // Should always be fcn_chapter now
+        $post_type = $settings['post_type'] ?? 'fcn_chapter';
         $fictioneer_story_id = $settings['fictioneer_story_id'] ?? null;
         $batch_size = $settings['batch_size'] ?? 10;
         $is_dry_run = $settings['is_dry_run'] ?? false;
+        $show_preview = $settings['show_preview'] ?? false;
+        $backup_content = $settings['backup_content'] ?? false;
+        $match_method = $settings['match_method'] ?? 'title';
         
         if (!$zip_path || !file_exists($zip_path) || !$fictioneer_story_id) {
+            error_log("ZIP Replacer: Session data missing or file not found. Path: {$zip_path}");
             wp_send_json_error(['message' => 'Session expired or file not found. Please start over.']);
         }
 
@@ -176,80 +287,95 @@ class ZipContentReplacer_Enhanced {
 
         $zip = new ZipArchive;
         if ($zip->open($zip_path) !== TRUE) {
+            error_log("ZIP Replacer: Cannot open ZIP archive at {$zip_path}");
             wp_send_json_error(['message' => 'Error: Cannot open the ZIP archive.']);
         }
 
         $total_files = $zip->numFiles;
         $end = min($offset + $batch_size, $total_files);
 
+        // Build chapter cache for this story
+        $chapter_map = $this->get_story_chapters_map($fictioneer_story_id, $match_method);
+
         for ($i = $offset; $i < $end; $i++) {
             $filename = $zip->getNameIndex($i);
 
             if (substr($filename, -1) === '/' || !$this->is_supported_file($filename)) {
-                $logs[] = "INFO: Skipping directory or unsupported file: {$filename}";
+                $logs[] = "<span style='color: #999;'>⏭️ INFO: Skipping directory or unsupported file: {$filename}</span>";
                 continue;
             }
 
             $content = $zip->getFromIndex($i);
             if ($content === false) {
-                $logs[] = "WARN: Could not read content from file: {$filename}";
+                $logs[] = "<span style='color: orange;'>⚠️ WARN: Could not read content from file: {$filename}</span>";
                 continue;
             }
             
             // Convert encoding if not UTF-8
             if (!mb_check_encoding($content, 'UTF-8')) {
-                // Attempt to detect and convert, fallback to a simpler conversion
-                $detected_encoding = mb_detect_encoding($content, 'UTF-8, ISO-8859-1, Windows-1252', true);
+                $detected_encoding = mb_detect_encoding($content, 'UTF-8, ISO-8859-1, Windows-1252, GB2312, GBK', true);
                 if ($detected_encoding && $detected_encoding !== 'UTF-8') {
                     $content = mb_convert_encoding($content, 'UTF-8', $detected_encoding);
-                    $logs[] = "INFO: Converted encoding of '{$filename}' from {$detected_encoding} to UTF-8.";
+                    $logs[] = "<span style='color: #666;'>🔄 INFO: Converted encoding of '{$filename}' from {$detected_encoding} to UTF-8.</span>";
                 } else {
-                    $content = mb_convert_encoding($content, 'UTF-8'); // Fallback conversion
-                    $logs[] = "INFO: Attempted simple encoding conversion for '{$filename}'.";
+                    $content = mb_convert_encoding($content, 'UTF-8');
+                    $logs[] = "<span style='color: #666;'>🔄 INFO: Attempted encoding conversion for '{$filename}'.</span>";
                 }
             }
 
-
-            $post_title = pathinfo($filename, PATHINFO_FILENAME);
+            $filename_base = pathinfo($filename, PATHINFO_FILENAME);
             
-            // Fetch chapters based on title AND story ID
-            $args = array(
-                'post_type' => $post_type,
-                'title' => $post_title,
-                'posts_per_page' => 1,
-                'post_status' => array('publish', 'future', 'draft', 'pending'), // Support all editable statuses
-                'meta_query' => array(
-                    array(
-                        'key' => 'fictioneer_chapter_story',
-                        'value' => $fictioneer_story_id,
-                        'compare' => '=',
-                        'type' => 'NUMERIC'
-                    )
-                )
-            );
-
-            $chapters = get_posts($args);
-            $post = !empty($chapters) ? $chapters[0] : null;
+            // Find matching chapter
+            $post = null;
+            if ($match_method === 'slug') {
+                $slug = sanitize_title($filename_base);
+                $post = $this->find_chapter_by_slug($slug, $fictioneer_story_id, $post_type);
+            } else {
+                // Match by title using cache
+                if (isset($chapter_map[$filename_base])) {
+                    $post = get_post($chapter_map[$filename_base]);
+                }
+            }
 
             if ($post) {
+                // Check for duplicates
+                $duplicate_check = $this->check_for_duplicates($filename_base, $fictioneer_story_id, $post_type, $match_method);
+                if ($duplicate_check > 1) {
+                    $logs[] = "<span style='color: orange;'>⚠️ WARNING: Multiple chapters ({$duplicate_check}) found for '{$filename_base}'. Using first match (ID: {$post->ID}).</span>";
+                }
+
                 if (!$is_dry_run) {
+                    // Backup original content if enabled
+                    if ($backup_content) {
+                        update_post_meta($post->ID, '_zip_replacer_backup', $post->post_content);
+                        update_post_meta($post->ID, '_zip_replacer_backup_time', time());
+                        update_post_meta($post->ID, '_zip_replacer_backup_filename', $filename);
+                    }
+
                     // Apply wp_kses_post for security before updating
                     $updated = wp_update_post([
                         'ID' => $post->ID,
                         'post_content' => wp_kses_post(wpautop($content))
                     ]);
+
                     if (is_wp_error($updated)) {
-                        $logs[] = "ERROR: Failed to update chapter '{$post_title}' (ID: {$post->ID}). WP_Error: {$updated->get_error_message()}.";
+                        $logs[] = "<span style='color: red;'>❌ ERROR: Failed to update chapter '{$filename_base}' (ID: {$post->ID}). WP_Error: {$updated->get_error_message()}.</span>";
+                        error_log("ZIP Replacer: Update failed for post {$post->ID} - " . $updated->get_error_message());
                     } elseif ($updated === 0) {
-                        $logs[] = "INFO: Chapter '{$post_title}' (ID: {$post->ID}) found for story ID {$fictioneer_story_id} but no content changes were detected.";
+                        $logs[] = "<span style='color: #666;'>ℹ️ INFO: Chapter '{$filename_base}' (ID: {$post->ID}) found but no content changes detected.</span>";
                     } else {
-                        $logs[] = "SUCCESS: Updated chapter '{$post_title}' (ID: {$post->ID}) for story ID {$fictioneer_story_id}.";
+                        $logs[] = "<span style='color: green;'>✅ SUCCESS: Updated chapter '{$filename_base}' (ID: {$post->ID}) for story ID {$fictioneer_story_id}.</span>";
                     }
                 } else {
-                    $logs[] = "[DRY RUN] SUCCESS: Would update chapter '{$post_title}' (ID: {$post->ID}) for story ID {$fictioneer_story_id}.";
+                    $preview_text = '';
+                    if ($show_preview) {
+                        $preview = mb_substr(strip_tags($content), 0, 150);
+                        $preview_text = " | Preview: " . esc_html($preview) . "...";
+                    }
+                    $logs[] = "<span style='color: blue;'>🔍 [DRY RUN] Would update chapter '{$filename_base}' (ID: {$post->ID}) for story ID {$fictioneer_story_id}.{$preview_text}</span>";
                 }
             } else {
-                 $logs[] = "INFO: Skipped - No chapter found with title '{$post_title}' belonging to story ID {$fictioneer_story_id}.";
+                $logs[] = "<span style='color: #999;'>⏭️ INFO: Skipped - No chapter found with " . ($match_method === 'slug' ? 'slug' : 'title') . " '{$filename_base}' belonging to story ID {$fictioneer_story_id}.</span>";
             }
         }
 
@@ -258,14 +384,19 @@ class ZipContentReplacer_Enhanced {
         $remaining = max(0, $total_files - $next_offset);
 
         if ($remaining === 0) {
+            // Cleanup
             if (file_exists($zip_path)) unlink($zip_path);
-            // Delete the option after completion
-            delete_option(self::SETTINGS_OPTION_KEY . $user_id); 
-            $logs[] = "-----> All files processed. Cleanup complete. <-----";
+            delete_transient(self::SETTINGS_TRANSIENT_KEY . $user_id);
+            delete_transient(self::RESUME_TRANSIENT_KEY . $user_id);
+            delete_transient(self::CHAPTER_CACHE_KEY . $fictioneer_story_id);
+            $logs[] = "<span style='color: #046; font-weight: bold;'>✨ -----> All files processed. Cleanup complete. <-----</span>";
         } else {
-            // Re-update the option to persist current state for the next batch
-            // This is crucial to ensure the option isn't lost for subsequent batches
-            update_option(self::SETTINGS_OPTION_KEY . $user_id, $settings);
+            // Save resume point in case of failure
+            set_transient(self::RESUME_TRANSIENT_KEY . $user_id, [
+                'offset' => $next_offset,
+                'total' => $total_files,
+                'settings' => $settings
+            ], 3600);
         }
 
         wp_send_json_success([
@@ -276,6 +407,105 @@ class ZipContentReplacer_Enhanced {
             'logs'        => $logs,
             'is_dry_run'  => $is_dry_run
         ]);
+    }
+
+    private function get_story_chapters_map($story_id, $match_method) {
+        $cache_key = self::CHAPTER_CACHE_KEY . $story_id . '_' . $match_method;
+        $cached = get_transient($cache_key);
+        
+        if (false !== $cached) {
+            return $cached;
+        }
+
+        $args = [
+            'post_type' => 'fcn_chapter',
+            'posts_per_page' => -1,
+            'post_status' => ['publish', 'future', 'draft', 'pending'],
+            'meta_query' => [
+                [
+                    'key' => 'fictioneer_chapter_story',
+                    'value' => $story_id,
+                    'compare' => '=',
+                    'type' => 'NUMERIC'
+                ]
+            ],
+            'fields' => 'ids'
+        ];
+
+        $chapter_ids = get_posts($args);
+        $map = [];
+
+        foreach ($chapter_ids as $chapter_id) {
+            if ($match_method === 'slug') {
+                $post = get_post($chapter_id);
+                $map[$post->post_name] = $chapter_id;
+            } else {
+                $title = get_the_title($chapter_id);
+                $map[$title] = $chapter_id;
+            }
+        }
+
+        set_transient($cache_key, $map, 300); // Cache for 5 minutes
+        return $map;
+    }
+
+    private function find_chapter_by_slug($slug, $story_id, $post_type) {
+        $args = [
+            'post_type' => $post_type,
+            'name' => $slug,
+            'posts_per_page' => 1,
+            'post_status' => ['publish', 'future', 'draft', 'pending'],
+            'meta_query' => [
+                [
+                    'key' => 'fictioneer_chapter_story',
+                    'value' => $story_id,
+                    'compare' => '=',
+                    'type' => 'NUMERIC'
+                ]
+            ]
+        ];
+
+        $chapters = get_posts($args);
+        return !empty($chapters) ? $chapters[0] : null;
+    }
+
+    private function check_for_duplicates($identifier, $story_id, $post_type, $match_method) {
+        if ($match_method === 'slug') {
+            $args = [
+                'post_type' => $post_type,
+                'name' => sanitize_title($identifier),
+                'posts_per_page' => -1,
+                'post_status' => ['publish', 'future', 'draft', 'pending'],
+                'meta_query' => [
+                    [
+                        'key' => 'fictioneer_chapter_story',
+                        'value' => $story_id,
+                        'compare' => '=',
+                        'type' => 'NUMERIC'
+                    ]
+                ],
+                'fields' => 'ids'
+            ];
+        } else {
+            $args = [
+                'post_type' => $post_type,
+                'title' => $identifier,
+                'posts_per_page' => -1,
+                'post_status' => ['publish', 'future', 'draft', 'pending'],
+                'meta_query' => [
+                    [
+                        'key' => 'fictioneer_chapter_story',
+                        'value' => $story_id,
+                        'compare' => '=',
+                        'type' => 'NUMERIC'
+                    ]
+                ],
+                'fields' => 'ids'
+            ];
+        }
+
+        $chapters = get_posts($args);
+        return count($chapters);
     }
 
     private function is_supported_file($filename) {

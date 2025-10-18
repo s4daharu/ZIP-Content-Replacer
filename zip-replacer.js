@@ -5,7 +5,50 @@ jQuery(document).ready(function ($) {
     const logContainer = $('#zip-process-log');
     const progressFill = $('#zip-progress-fill');
     const progressText = $('#zip-progress-text');
+    const etaText = $('#zip-eta-text');
     const processingTitle = $('#processing-title');
+    const exportLogBtn = $('#export-log-btn');
+    const resumeBtn = $('#resume-processing-btn');
+    const cancelResumeBtn = $('#cancel-resume-btn');
+
+    let startTime = null;
+    let processedItems = 0;
+
+    // Check for resume session on page load
+    if (resumeBtn.length > 0) {
+        resumeBtn.on('click', function() {
+            $.ajax({
+                url: zipReplacerAjax.ajaxUrl,
+                method: 'POST',
+                data: {
+                    action: 'resume_processing',
+                    nonce: zipReplacerAjax.resumeNonce
+                },
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        $('.notice').hide();
+                        processingArea.show();
+                        startTime = Date.now();
+                        processedItems = response.data.offset;
+                        
+                        logContainer.html('<span style="color: blue;">Resuming previous session...</span>\n');
+                        
+                        processBatch(response.data.offset, response.data.total);
+                    } else {
+                        alert('Failed to resume: ' + response.data.message);
+                    }
+                },
+                error: function() {
+                    alert('Error attempting to resume session.');
+                }
+            });
+        });
+
+        cancelResumeBtn.on('click', function() {
+            $('.notice').hide();
+        });
+    }
 
     form.on('submit', function (e) {
         e.preventDefault();
@@ -15,7 +58,7 @@ jQuery(document).ready(function ($) {
             alert('Please select a ZIP file to upload.');
             return;
         }
-        
+
         // Validation for story selection
         if ($('#fictioneer_story_id').val() === '') {
             alert('Please select a Fictioneer Story.');
@@ -24,15 +67,20 @@ jQuery(document).ready(function ($) {
 
         submitButton.prop('disabled', true).val('Uploading...');
         processingArea.show();
-        logContainer.html(''); // Clear previous logs
+        logContainer.html('');
         progressFill.css('width', '0%');
         progressText.text('Uploading and preparing file...');
+        etaText.text('');
+        exportLogBtn.hide();
 
         const formData = new FormData(this);
         formData.append('action', 'handle_zip_upload_ajax');
         formData.append('nonce', zipReplacerAjax.uploadNonce);
 
-        // 1. Initial AJAX call to upload the file and set up options
+        startTime = Date.now();
+        processedItems = 0;
+
+        // 1. Initial AJAX call to upload the file and set up settings
         $.ajax({
             url: zipReplacerAjax.ajaxUrl,
             method: 'POST',
@@ -42,81 +90,120 @@ jQuery(document).ready(function ($) {
             dataType: 'json',
             success: function (response) {
                 if (response.success) {
-                    logContainer.append($('<div>').text(response.data.message)); // Fixed sanitization
-                    startProcessing(0); // 2. Start the batch processing
+                    logContainer.append($('<div>').html('<span style="color: green;">✅ ' + response.data.message + '</span>'));
+                    logContainer.append($('<div>').html(''));
+
+                    // Start batch processing
+                    processBatch(0, null);
                 } else {
-                    handleFatalError('Upload Error: ' + response.data.message);
+                    logContainer.append($('<div>').html('<span style="color: red;">❌ Error: ' + response.data.message + '</span>'));
+                    submitButton.prop('disabled', false).val('Upload and Process');
                 }
             },
             error: function (xhr, status, error) {
-                handleFatalError('Upload AJAX Error: ' + error);
+                logContainer.append($('<div>').html('<span style="color: red;">❌ Upload Error: ' + error + '</span>'));
+                submitButton.prop('disabled', false).val('Upload and Process');
             }
         });
     });
 
-    function startProcessing(offset, retryCount = 0) {
+    function processBatch(offset, totalFiles) {
         $.ajax({
             url: zipReplacerAjax.ajaxUrl,
             method: 'POST',
-            dataType: 'json',
             data: {
                 action: 'process_zip_batch',
                 nonce: zipReplacerAjax.processNonce,
                 offset: offset
             },
+            dataType: 'json',
             success: function (response) {
                 if (response.success) {
-                    let total = response.data.total;
-                    let processed = response.data.processed;
-                    let percent = total > 0 ? Math.floor((processed / total) * 100) : 100;
-                    
-                    if (response.data.is_dry_run) {
-                        processingTitle.text('Processing (Dry Run)...');
-                        progressFill.css('background-color', '#337ab7'); // Blue for dry run
-                    } else {
-                        processingTitle.text('Processing (Live)...');
-                        progressFill.css('background-color', '#46b450'); // Green for live
+                    const data = response.data;
+                    const processed = data.processed;
+                    const remaining = data.remaining;
+                    const total = data.total;
+                    const isDryRun = data.is_dry_run;
+
+                    processedItems = processed;
+
+                    // Update progress bar
+                    const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
+                    progressFill.css('width', percentage + '%');
+                    progressText.text(percentage + '% complete (' + processed + ' / ' + total + ' files processed, ' + remaining + ' remaining)');
+
+                    // Calculate and display ETA
+                    if (processed > 0 && remaining > 0) {
+                        const elapsed = (Date.now() - startTime) / 1000; // seconds
+                        const rate = processed / elapsed; // files per second
+                        const remainingTime = remaining / rate; // seconds
+                        const minutes = Math.floor(remainingTime / 60);
+                        const seconds = Math.round(remainingTime % 60);
+                        
+                        let etaDisplay = 'Estimated time remaining: ';
+                        if (minutes > 0) {
+                            etaDisplay += minutes + 'm ' + seconds + 's';
+                        } else {
+                            etaDisplay += seconds + 's';
+                        }
+                        etaText.text(etaDisplay);
+                    } else if (remaining === 0) {
+                        etaText.text('');
                     }
 
-                    progressFill.css('width', percent + '%');
-                    progressText.text('Processed ' + processed + ' of ' + total + ' files...');
+                    // Update title for dry run
+                    if (isDryRun) {
+                        processingTitle.text('[DRY RUN MODE] Processing...');
+                        progressFill.css('background', '#f0ad4e'); // Orange for dry run
+                    }
 
-                    // Append logs to the container
-                    if (response.data.logs && response.data.logs.length > 0) {
-                        response.data.logs.forEach(function(log) {
-                            logContainer.append($('<div>').text(log)); // Fixed sanitization
+                    // Append logs
+                    if (data.logs && data.logs.length > 0) {
+                        data.logs.forEach(function (log) {
+                            logContainer.append($('<div>').html(log));
                         });
-                        logContainer.scrollTop(logContainer[0].scrollHeight); // Auto-scroll
+                        // Auto-scroll to bottom
+                        logContainer.scrollTop(logContainer[0].scrollHeight);
                     }
 
-                    if (response.data.remaining > 0) {
-                        startProcessing(response.data.next_offset);
+                    // Continue with next batch or finish
+                    if (remaining > 0) {
+                        processBatch(data.next_offset, total);
                     } else {
-                        let finalMessage = response.data.is_dry_run ? 'Dry run complete!' : 'Processing complete!';
-                        progressText.text(finalMessage);
-                        processingTitle.text('Finished!');
-                        submitButton.prop('disabled', false).val('Upload and Process'); // Original behavior
+                        progressText.text('✅ Processing complete! 100% (' + total + ' files processed)');
+                        processingTitle.text(isDryRun ? '[DRY RUN COMPLETE]' : 'Processing Complete!');
+                        submitButton.prop('disabled', false).val('Upload and Process');
+                        exportLogBtn.show();
+                        etaText.text('');
                     }
                 } else {
-                    handleFatalError('Error: ' + response.data.message);
+                    logContainer.append($('<div>').html('<span style="color: red;">❌ Error: ' + response.data.message + '</span>'));
+                    submitButton.prop('disabled', false).val('Upload and Process');
+                    exportLogBtn.show();
                 }
             },
             error: function (xhr, status, error) {
-                if (retryCount < 3) {
-                    progressText.text(`Network Error. Retrying in 5s... (Attempt ${retryCount + 1}/3)`);
-                    setTimeout(function() {
-                        startProcessing(offset, retryCount + 1);
-                    }, 5000);
-                } else {
-                    handleFatalError('AJAX Error after 3 retries: ' + error);
-                }
+                logContainer.append($('<div>').html('<span style="color: red;">❌ Processing Error: ' + error + '. You can try resuming if you reload the page.</span>'));
+                submitButton.prop('disabled', false).val('Upload and Process');
+                exportLogBtn.show();
             }
         });
     }
-    
-    function handleFatalError(message) {
-        progressText.text(message).css('color', 'red');
-        logContainer.append($('<div style="color:red; font-weight:bold;">').text(message)); // Fixed sanitization
-        submitButton.prop('disabled', false).val('Try Again');
-    }
+
+    // Export log functionality
+    exportLogBtn.on('click', function() {
+        const logText = logContainer.text();
+        const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+        const filename = 'zip-replacer-log-' + timestamp + '.txt';
+        
+        const blob = new Blob([logText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
 });
