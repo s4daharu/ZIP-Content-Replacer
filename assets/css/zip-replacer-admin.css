@@ -1,0 +1,1206 @@
+/**
+ * ZIP Content Replacer - Modern Admin Styles
+ * Version: 1.0.0
+ * 
+ * Mobile-first, modern design system for WordPress admin
+ */
+
+/* ============================================
+   DESIGN TOKENS (CSS Custom Properties)
+   ============================================ */
+:root {
+    /* Colors - Light Mode */
+    --zcr-primary: #3858e9;
+    --zcr-primary-hover: #2d47c7;
+    --zcr-primary-light: rgba(56, 88, 233, 0.1);
+    --zcr-success: #10b981;
+    --zcr-success-light: rgba(16, 185, 129, 0.1);
+    --zcr-warning: #f59e0b;
+    --zcr-warning-light: rgba(245, 158, 11, 0.1);
+    --zcr-error: #ef4444;
+    --zcr-error-light: rgba(239, 68, 68, 0.1);
+    --zcr-info: #6366f1;
+    --zcr-info-light: rgba(99, 102, 241, 0.1);
+
+    /* Surfaces */
+    --zcr-bg: #f0f2f5;
+    --zcr-card-bg: #ffffff;
+    --zcr-card-border: rgba(0, 0, 0, 0.06);
+    --zcr-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --zcr-card-shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+
+    /* Text */
+    --zcr-text-primary: #1e293b;
+    --zcr-text-secondary: #64748b;
+    --zcr-text-muted: #94a3b8;
+
+    /* Spacing */
+    --zcr-space-xs: 4px;
+    --zcr-space-sm: 8px;
+    --zcr-space-md: 16px;
+    --zcr-space-lg: 24px;
+    --zcr-space-xl: 32px;
+    --zcr-space-2xl: 48px;
+
+    /* Border Radius */
+    --zcr-radius-sm: 6px;
+    --zcr-radius-md: 12px;
+    --zcr-radius-lg: 16px;
+    --zcr-radius-xl: 24px;
+    --zcr-radius-full: 9999px;
+
+    /* Transitions */
+    --zcr-transition-fast: 150ms ease;
+    --zcr-transition-base: 250ms ease;
+    --zcr-transition-slow: 350ms ease;
+
+    /* Console */
+    --zcr-console-bg: #1e1e2e;
+    --zcr-console-text: #cdd6f4;
+    --zcr-console-border: #313244;
+}
+
+/* Dark mode support - matches WordPress admin dark mode */
+.admin-color-dark #wpbody,
+.admin-color-midnight #wpbody,
+body.zcr-dark-mode {
+    --zcr-bg: #1a1a2e;
+    --zcr-card-bg: #16213e;
+    --zcr-card-border: rgba(255, 255, 255, 0.08);
+    --zcr-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+    --zcr-text-primary: #e2e8f0;
+    --zcr-text-secondary: #94a3b8;
+    --zcr-text-muted: #64748b;
+}
+
+/* ============================================
+   BASE WRAPPER
+   ============================================ */
+.zcr-wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--zcr-space-lg);
+}
+
+.zcr-wrap h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--zcr-text-primary);
+    margin-bottom: var(--zcr-space-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--zcr-space-sm);
+}
+
+.zcr-wrap h1::before {
+    content: '📦';
+    font-size: 32px;
+}
+
+.zcr-description {
+    color: var(--zcr-text-secondary);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: var(--zcr-space-xl);
+    max-width: 700px;
+}
+
+/* ============================================
+   CARDS
+   ============================================ */
+.zcr-card {
+    background: var(--zcr-card-bg);
+    border: 1px solid var(--zcr-card-border);
+    border-radius: var(--zcr-radius-lg);
+    box-shadow: var(--zcr-card-shadow);
+    padding: var(--zcr-space-lg);
+    margin-bottom: var(--zcr-space-lg);
+    transition: box-shadow var(--zcr-transition-base);
+}
+
+.zcr-card:hover {
+    box-shadow: var(--zcr-card-shadow-hover);
+}
+
+.zcr-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--zcr-space-sm);
+    margin-bottom: var(--zcr-space-md);
+    padding-bottom: var(--zcr-space-md);
+    border-bottom: 1px solid var(--zcr-card-border);
+}
+
+.zcr-card-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--zcr-text-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--zcr-space-sm);
+}
+
+.zcr-card-header .zcr-icon {
+    font-size: 20px;
+}
+
+/* ============================================
+   DRAG & DROP UPLOAD ZONE
+   ============================================ */
+.zcr-upload-zone {
+    border: 2px dashed var(--zcr-card-border);
+    border-radius: var(--zcr-radius-lg);
+    padding: var(--zcr-space-2xl) var(--zcr-space-lg);
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--zcr-transition-base);
+    background: linear-gradient(135deg, rgba(56, 88, 233, 0.02), rgba(56, 88, 233, 0.05));
+    position: relative;
+}
+
+.zcr-upload-zone:hover,
+.zcr-upload-zone.zcr-drag-over {
+    border-color: var(--zcr-primary);
+    background: var(--zcr-primary-light);
+    transform: scale(1.01);
+}
+
+.zcr-upload-zone.zcr-drag-over {
+    border-style: solid;
+}
+
+.zcr-upload-zone.zcr-has-file {
+    border-color: var(--zcr-success);
+    background: var(--zcr-success-light);
+}
+
+.zcr-upload-icon {
+    font-size: 48px;
+    margin-bottom: var(--zcr-space-md);
+    display: block;
+}
+
+.zcr-upload-zone h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--zcr-text-primary);
+    margin: 0 0 var(--zcr-space-xs);
+}
+
+.zcr-upload-zone p {
+    color: var(--zcr-text-secondary);
+    margin: 0 0 var(--zcr-space-md);
+}
+
+.zcr-upload-hint {
+    display: inline-block;
+    font-size: 12px;
+    color: var(--zcr-text-muted);
+    background: var(--zcr-bg);
+    padding: var(--zcr-space-xs) var(--zcr-space-md);
+    border-radius: var(--zcr-radius-full);
+}
+
+.zcr-upload-zone input[type="file"] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.zcr-file-info {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: var(--zcr-space-sm);
+    color: var(--zcr-success);
+    font-weight: 500;
+}
+
+.zcr-upload-zone.zcr-has-file .zcr-file-info {
+    display: flex;
+}
+
+.zcr-upload-zone.zcr-has-file .zcr-upload-default {
+    display: none;
+}
+
+/* ============================================
+   FORM ELEMENTS
+   ============================================ */
+.zcr-form-group {
+    margin-bottom: var(--zcr-space-lg);
+}
+
+.zcr-form-group:last-child {
+    margin-bottom: 0;
+}
+
+.zcr-label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--zcr-text-primary);
+    margin-bottom: var(--zcr-space-sm);
+}
+
+.zcr-label-hint {
+    font-weight: 400;
+    color: var(--zcr-text-muted);
+    font-size: 13px;
+}
+
+/* Enhanced Select Dropdown */
+.zcr-select-wrapper {
+    position: relative;
+}
+
+.zcr-select {
+    width: 100%;
+    padding: 12px 40px 12px 16px;
+    font-size: 14px;
+    border: 1px solid var(--zcr-card-border);
+    border-radius: var(--zcr-radius-md);
+    background: var(--zcr-card-bg);
+    color: var(--zcr-text-primary);
+    cursor: pointer;
+    transition: all var(--zcr-transition-fast);
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6,9 12,15 18,9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+}
+
+.zcr-select:hover {
+    border-color: var(--zcr-primary);
+}
+
+.zcr-select:focus {
+    outline: none;
+    border-color: var(--zcr-primary);
+    box-shadow: 0 0 0 3px var(--zcr-primary-light);
+}
+
+/* Radio Buttons as Pill Selector */
+.zcr-radio-group {
+    display: flex;
+    gap: var(--zcr-space-sm);
+    flex-wrap: wrap;
+}
+
+.zcr-radio-pill {
+    position: relative;
+}
+
+.zcr-radio-pill input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.zcr-radio-pill label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--zcr-space-xs);
+    padding: 10px 20px;
+    border: 1px solid var(--zcr-card-border);
+    border-radius: var(--zcr-radius-full);
+    font-size: 14px;
+    color: var(--zcr-text-secondary);
+    cursor: pointer;
+    transition: all var(--zcr-transition-fast);
+    background: var(--zcr-card-bg);
+}
+
+.zcr-radio-pill label:hover {
+    border-color: var(--zcr-primary);
+    color: var(--zcr-primary);
+}
+
+.zcr-radio-pill input[type="radio"]:checked+label {
+    background: var(--zcr-primary);
+    border-color: var(--zcr-primary);
+    color: white;
+}
+
+/* ============================================
+   TOGGLE SWITCHES
+   ============================================ */
+.zcr-option-card {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: var(--zcr-space-md);
+    border: 1px solid var(--zcr-card-border);
+    border-radius: var(--zcr-radius-md);
+    margin-bottom: var(--zcr-space-sm);
+    transition: all var(--zcr-transition-fast);
+    background: var(--zcr-card-bg);
+}
+
+.zcr-option-card:hover {
+    border-color: var(--zcr-primary-light);
+    background: linear-gradient(135deg, rgba(56, 88, 233, 0.02), transparent);
+}
+
+.zcr-option-card:last-child {
+    margin-bottom: 0;
+}
+
+.zcr-option-content {
+    flex: 1;
+}
+
+.zcr-option-title {
+    display: flex;
+    align-items: center;
+    gap: var(--zcr-space-sm);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--zcr-text-primary);
+    margin-bottom: var(--zcr-space-xs);
+}
+
+.zcr-option-description {
+    font-size: 13px;
+    color: var(--zcr-text-muted);
+    line-height: 1.5;
+}
+
+/* Toggle Switch */
+.zcr-toggle {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    flex-shrink: 0;
+    margin-left: var(--zcr-space-md);
+}
+
+.zcr-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.zcr-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #cbd5e1;
+    border-radius: var(--zcr-radius-full);
+    transition: all var(--zcr-transition-fast);
+}
+
+.zcr-toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: all var(--zcr-transition-fast);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.zcr-toggle input:checked+.zcr-toggle-slider {
+    background-color: var(--zcr-primary);
+}
+
+.zcr-toggle input:checked+.zcr-toggle-slider:before {
+    transform: translateX(22px);
+}
+
+.zcr-toggle input:focus+.zcr-toggle-slider {
+    box-shadow: 0 0 0 3px var(--zcr-primary-light);
+}
+
+/* Number Input */
+.zcr-number-input {
+    display: flex;
+    align-items: center;
+    gap: var(--zcr-space-sm);
+}
+
+.zcr-number-input input[type="number"] {
+    width: 80px;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 1px solid var(--zcr-card-border);
+    border-radius: var(--zcr-radius-md);
+    background: var(--zcr-card-bg);
+    color: var(--zcr-text-primary);
+    text-align: center;
+}
+
+.zcr-number-input input[type="number"]:focus {
+    outline: none;
+    border-color: var(--zcr-primary);
+    box-shadow: 0 0 0 3px var(--zcr-primary-light);
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+.zcr-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--zcr-space-sm);
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: var(--zcr-radius-md);
+    cursor: pointer;
+    transition: all var(--zcr-transition-fast);
+    border: none;
+    min-height: 44px;
+}
+
+.zcr-btn-primary {
+    background: linear-gradient(135deg, var(--zcr-primary), var(--zcr-primary-hover));
+    color: white;
+    box-shadow: 0 4px 12px rgba(56, 88, 233, 0.3);
+}
+
+.zcr-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(56, 88, 233, 0.4);
+}
+
+.zcr-btn-primary:active {
+    transform: translateY(0);
+}
+
+.zcr-btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.zcr-btn-secondary {
+    background: var(--zcr-card-bg);
+    color: var(--zcr-text-primary);
+    border: 1px solid var(--zcr-card-border);
+}
+
+.zcr-btn-secondary:hover {
+    border-color: var(--zcr-primary);
+    color: var(--zcr-primary);
+}
+
+.zcr-btn-success {
+    background: linear-gradient(135deg, var(--zcr-success), #059669);
+    color: white;
+}
+
+.zcr-btn-danger {
+    background: linear-gradient(135deg, var(--zcr-error), #dc2626);
+    color: white;
+}
+
+.zcr-btn-ghost {
+    background: transparent;
+    color: var(--zcr-text-secondary);
+    padding: 8px 12px;
+}
+
+.zcr-btn-ghost:hover {
+    background: var(--zcr-bg);
+    color: var(--zcr-text-primary);
+}
+
+.zcr-btn-icon {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: var(--zcr-radius-md);
+}
+
+/* ============================================
+   PROGRESS INDICATOR
+   ============================================ */
+.zcr-progress-area {
+    display: none;
+    margin-top: var(--zcr-space-lg);
+}
+
+.zcr-progress-area.zcr-active {
+    display: block;
+}
+
+.zcr-progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--zcr-space-md);
+}
+
+.zcr-progress-title {
+    display: flex;
+    align-items: center;
+    gap: var(--zcr-space-sm);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--zcr-text-primary);
+}
+
+.zcr-progress-title.zcr-dry-run {
+    color: var(--zcr-warning);
+}
+
+.zcr-progress-badge {
+    padding: 4px 12px;
+    border-radius: var(--zcr-radius-full);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.zcr-progress-badge.zcr-dry-run {
+    background: var(--zcr-warning-light);
+    color: var(--zcr-warning);
+}
+
+/* Progress Bar */
+.zcr-progress-bar-container {
+    background: var(--zcr-bg);
+    border-radius: var(--zcr-radius-full);
+    height: 12px;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: var(--zcr-space-md);
+}
+
+.zcr-progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--zcr-primary), #6366f1);
+    border-radius: var(--zcr-radius-full);
+    transition: width var(--zcr-transition-slow);
+    position: relative;
+}
+
+.zcr-progress-bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: zcr-shimmer 2s infinite;
+}
+
+@keyframes zcr-shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.zcr-progress-bar-fill.zcr-dry-run {
+    background: linear-gradient(90deg, var(--zcr-warning), #fbbf24);
+}
+
+.zcr-progress-bar-fill.zcr-complete {
+    background: linear-gradient(90deg, var(--zcr-success), #34d399);
+}
+
+.zcr-progress-stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--zcr-space-sm);
+}
+
+.zcr-progress-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--zcr-text-primary);
+}
+
+.zcr-progress-eta {
+    font-size: 13px;
+    color: var(--zcr-text-muted);
+    display: flex;
+    align-items: center;
+    gap: var(--zcr-space-xs);
+}
+
+/* ============================================
+   LOG CONSOLE
+   ============================================ */
+.zcr-console {
+    background: var(--zcr-console-bg);
+    border-radius: var(--zcr-radius-lg);
+    overflow: hidden;
+    margin-top: var(--zcr-space-lg);
+}
+
+.zcr-console-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--zcr-space-md);
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--zcr-console-border);
+    flex-wrap: wrap;
+    gap: var(--zcr-space-sm);
+}
+
+.zcr-console-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--zcr-console-text);
+    display: flex;
+    align-items: center;
+    gap: var(--zcr-space-sm);
+}
+
+.zcr-console-filters {
+    display: flex;
+    gap: var(--zcr-space-xs);
+    flex-wrap: wrap;
+}
+
+.zcr-console-filter {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: var(--zcr-radius-sm);
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--zcr-console-text);
+    cursor: pointer;
+    transition: all var(--zcr-transition-fast);
+}
+
+.zcr-console-filter:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.zcr-console-filter.zcr-active {
+    background: var(--zcr-primary);
+    color: white;
+}
+
+.zcr-console-filter[data-filter="success"].zcr-active {
+    background: var(--zcr-success);
+}
+
+.zcr-console-filter[data-filter="error"].zcr-active {
+    background: var(--zcr-error);
+}
+
+.zcr-console-filter[data-filter="warning"].zcr-active {
+    background: var(--zcr-warning);
+}
+
+.zcr-console-body {
+    height: 300px;
+    overflow-y: auto;
+    padding: var(--zcr-space-md);
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+}
+
+.zcr-console-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.zcr-console-body::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.zcr-console-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+
+.zcr-log-entry {
+    display: flex;
+    gap: var(--zcr-space-sm);
+    padding: var(--zcr-space-xs) 0;
+    color: var(--zcr-console-text);
+}
+
+.zcr-log-entry.zcr-hidden {
+    display: none;
+}
+
+.zcr-log-entry.zcr-success {
+    color: #a6e3a1;
+}
+
+.zcr-log-entry.zcr-error {
+    color: #f38ba8;
+}
+
+.zcr-log-entry.zcr-warning {
+    color: #f9e2af;
+}
+
+.zcr-log-entry.zcr-info {
+    color: #89b4fa;
+}
+
+.zcr-log-entry.zcr-skip {
+    color: #6c7086;
+}
+
+/* ============================================
+   RESTORE PAGE - CARD GRID
+   ============================================ */
+.zcr-backup-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: var(--zcr-space-lg);
+    margin-bottom: var(--zcr-space-lg);
+}
+
+.zcr-backup-card {
+    background: var(--zcr-card-bg);
+    border: 1px solid var(--zcr-card-border);
+    border-radius: var(--zcr-radius-lg);
+    padding: var(--zcr-space-lg);
+    transition: all var(--zcr-transition-base);
+}
+
+.zcr-backup-card:hover {
+    box-shadow: var(--zcr-card-shadow-hover);
+    transform: translateY(-2px);
+}
+
+.zcr-backup-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: var(--zcr-space-md);
+}
+
+.zcr-backup-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--zcr-text-primary);
+    margin: 0 0 var(--zcr-space-xs);
+    line-height: 1.4;
+}
+
+.zcr-backup-card-id {
+    font-size: 12px;
+    color: var(--zcr-text-muted);
+}
+
+.zcr-status-badge {
+    padding: 4px 10px;
+    border-radius: var(--zcr-radius-full);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.zcr-status-badge.zcr-published {
+    background: var(--zcr-success-light);
+    color: var(--zcr-success);
+}
+
+.zcr-status-badge.zcr-scheduled {
+    background: var(--zcr-warning-light);
+    color: var(--zcr-warning);
+}
+
+.zcr-status-badge.zcr-draft {
+    background: var(--zcr-info-light);
+    color: var(--zcr-info);
+}
+
+.zcr-backup-meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--zcr-space-xs);
+    margin-bottom: var(--zcr-space-md);
+    padding-bottom: var(--zcr-space-md);
+    border-bottom: 1px solid var(--zcr-card-border);
+}
+
+.zcr-backup-meta-item {
+    display: flex;
+    align-items: center;
+    gap: var(--zcr-space-sm);
+    font-size: 13px;
+    color: var(--zcr-text-secondary);
+}
+
+.zcr-backup-meta-item .zcr-icon {
+    font-size: 14px;
+    width: 20px;
+    text-align: center;
+}
+
+.zcr-backup-actions {
+    display: flex;
+    gap: var(--zcr-space-sm);
+}
+
+.zcr-backup-actions .zcr-btn {
+    flex: 1;
+}
+
+/* Batch Actions Toolbar */
+.zcr-batch-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--zcr-space-md) var(--zcr-space-lg);
+    background: var(--zcr-card-bg);
+    border: 1px solid var(--zcr-card-border);
+    border-radius: var(--zcr-radius-lg);
+    margin-bottom: var(--zcr-space-lg);
+    flex-wrap: wrap;
+    gap: var(--zcr-space-md);
+}
+
+.zcr-batch-info {
+    font-size: 14px;
+    color: var(--zcr-text-secondary);
+}
+
+.zcr-batch-info strong {
+    color: var(--zcr-text-primary);
+}
+
+.zcr-batch-actions {
+    display: flex;
+    gap: var(--zcr-space-sm);
+}
+
+/* ============================================
+   NOTICES
+   ============================================ */
+.zcr-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--zcr-space-md);
+    padding: var(--zcr-space-lg);
+    border-radius: var(--zcr-radius-lg);
+    margin-bottom: var(--zcr-space-lg);
+}
+
+.zcr-notice-info {
+    background: var(--zcr-info-light);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.zcr-notice-warning {
+    background: var(--zcr-warning-light);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.zcr-notice-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.zcr-notice-content h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--zcr-text-primary);
+    margin: 0 0 var(--zcr-space-xs);
+}
+
+.zcr-notice-content p {
+    font-size: 14px;
+    color: var(--zcr-text-secondary);
+    margin: 0 0 var(--zcr-space-md);
+}
+
+.zcr-notice-actions {
+    display: flex;
+    gap: var(--zcr-space-sm);
+}
+
+/* ============================================
+   EMPTY STATE
+   ============================================ */
+.zcr-empty-state {
+    text-align: center;
+    padding: var(--zcr-space-2xl);
+    color: var(--zcr-text-muted);
+}
+
+.zcr-empty-state .zcr-icon {
+    font-size: 48px;
+    margin-bottom: var(--zcr-space-md);
+    opacity: 0.5;
+}
+
+.zcr-empty-state h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--zcr-text-secondary);
+    margin: 0 0 var(--zcr-space-sm);
+}
+
+.zcr-empty-state p {
+    font-size: 14px;
+    margin: 0;
+}
+
+/* ============================================
+   MOBILE STYLES
+   ============================================ */
+@media (max-width: 782px) {
+    .zcr-wrap {
+        padding: var(--zcr-space-md);
+    }
+
+    .zcr-wrap h1 {
+        font-size: 22px;
+    }
+
+    .zcr-wrap h1::before {
+        font-size: 24px;
+    }
+
+    .zcr-card {
+        border-radius: var(--zcr-radius-md);
+        padding: var(--zcr-space-md);
+        margin-left: calc(-1 * var(--zcr-space-md));
+        margin-right: calc(-1 * var(--zcr-space-md));
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+    }
+
+    .zcr-upload-zone {
+        padding: var(--zcr-space-xl) var(--zcr-space-md);
+    }
+
+    .zcr-upload-icon {
+        font-size: 36px;
+    }
+
+    .zcr-upload-zone h3 {
+        font-size: 16px;
+    }
+
+    .zcr-radio-group {
+        flex-direction: column;
+    }
+
+    .zcr-radio-pill label {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .zcr-option-card {
+        flex-direction: column;
+        gap: var(--zcr-space-md);
+    }
+
+    .zcr-toggle {
+        margin-left: 0;
+        align-self: flex-end;
+    }
+
+    .zcr-progress-stats {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .zcr-console-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .zcr-console-filters {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: var(--zcr-space-xs);
+    }
+
+    .zcr-console-body {
+        height: 250px;
+        font-size: 11px;
+    }
+
+    .zcr-backup-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .zcr-backup-actions {
+        flex-direction: column;
+    }
+
+    .zcr-batch-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .zcr-batch-actions {
+        width: 100%;
+    }
+
+    .zcr-batch-actions .zcr-btn {
+        flex: 1;
+    }
+}
+
+/* Sticky Bottom Action Bar for Mobile */
+@media (max-width: 782px) {
+    .zcr-sticky-actions {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: var(--zcr-card-bg);
+        padding: var(--zcr-space-md);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+        border-top: 1px solid var(--zcr-card-border);
+        z-index: 100;
+        display: flex;
+        gap: var(--zcr-space-sm);
+    }
+
+    .zcr-sticky-actions .zcr-btn {
+        flex: 1;
+    }
+
+    /* Add padding at bottom to prevent content from being hidden */
+    .zcr-wrap.zcr-has-sticky-actions {
+        padding-bottom: 80px;
+    }
+}
+
+@media (min-width: 783px) {
+    .zcr-sticky-actions {
+        display: none !important;
+    }
+
+    .zcr-desktop-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--zcr-space-sm);
+        margin-top: var(--zcr-space-lg);
+    }
+}
+
+/* Hide desktop actions on mobile */
+@media (max-width: 782px) {
+    .zcr-desktop-actions {
+        display: none;
+    }
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+@keyframes zcr-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.zcr-card {
+    animation: zcr-fade-in 0.3s ease-out;
+}
+
+.zcr-backup-card {
+    animation: zcr-fade-in 0.3s ease-out;
+    animation-fill-mode: both;
+}
+
+.zcr-backup-card:nth-child(1) {
+    animation-delay: 0.05s;
+}
+
+.zcr-backup-card:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.zcr-backup-card:nth-child(3) {
+    animation-delay: 0.15s;
+}
+
+.zcr-backup-card:nth-child(4) {
+    animation-delay: 0.2s;
+}
+
+.zcr-backup-card:nth-child(5) {
+    animation-delay: 0.25s;
+}
+
+.zcr-backup-card:nth-child(6) {
+    animation-delay: 0.3s;
+}
+
+/* Pulse animation for processing */
+@keyframes zcr-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.zcr-processing .zcr-progress-title {
+    animation: zcr-pulse 1.5s infinite;
+}
+
+/* Spinner */
+.zcr-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: zcr-spin 0.8s linear infinite;
+}
+
+@keyframes zcr-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Success checkmark */
+@keyframes zcr-checkmark {
+    0% {
+        stroke-dashoffset: 50;
+    }
+
+    100% {
+        stroke-dashoffset: 0;
+    }
+}
+
+.zcr-checkmark {
+    stroke-dasharray: 50;
+    stroke-dashoffset: 50;
+    animation: zcr-checkmark 0.4s ease-out forwards;
+}

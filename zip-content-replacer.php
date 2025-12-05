@@ -3,7 +3,7 @@
  * Plugin Name: ZIP Content Replacer Enhanced
  * Plugin URI: https://github.com/MarineTL/zip-content-replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, dry run mode, backup/restore functionality, and advanced features. Designed for Fictioneer theme.
- * Version: 3.1.0
+ * Version: 3.1.1
  * Author: MarineTL
  * Author URI: https://github.com/MarineTL
  * Text Domain: zip-content-replacer
@@ -41,9 +41,17 @@ class ZipContentReplacer_Enhanced {
     }
 
     public function enqueue_admin_scripts($hook) {
-        if ($hook !== 'tools_page_zip-content-replacer') return;
+        if ($hook !== 'tools_page_zip-content-replacer' && $hook !== 'tools_page_zip-content-restorer') return;
 
-        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], '3.0.0', true);
+        // Enqueue modern admin styles
+        wp_enqueue_style(
+            'zip-replacer-admin-css',
+            plugin_dir_url(__FILE__) . 'assets/css/zip-replacer-admin.css',
+            [],
+            ZIP_CONTENT_REPLACER_VERSION
+        );
+
+        wp_enqueue_script('zip-replacer-ajax', plugin_dir_url(__FILE__) . 'zip-replacer.js', ['jquery'], ZIP_CONTENT_REPLACER_VERSION, true);
         wp_localize_script('zip-replacer-ajax', 'zipReplacerAjax', [
             'ajaxUrl'     => admin_url('admin-ajax.php'),
             'uploadNonce' => wp_create_nonce('zip_replacer_upload_nonce'),
@@ -73,99 +81,227 @@ class ZipContentReplacer_Enhanced {
         $user_id = get_current_user_id();
         $resume_session = get_transient(self::RESUME_TRANSIENT_KEY . $user_id);
         ?>
-        <div class="wrap">
-            <h1>ZIP Content Replacer for Fictioneer Chapters</h1>
-            <p>This tool updates Fictioneer chapter content with text from files in a ZIP archive. Chapters are matched by their title or slug and must belong to the selected Fictioneer Story.</p>
+        <div class="zcr-wrap zcr-has-sticky-actions">
+            <h1>ZIP Content Replacer</h1>
+            <p class="zcr-description">Update Fictioneer chapter content with text from files in a ZIP archive. Chapters are matched by their title or slug and must belong to the selected Fictioneer Story.</p>
             
             <?php if ($resume_session): ?>
-            <div class="notice notice-info" style="padding: 15px; margin-bottom: 20px;">
-                <h3>⚠️ Incomplete Session Detected</h3>
-                <p>You have an incomplete processing session. Would you like to resume?</p>
-                <button type="button" id="resume-processing-btn" class="button button-primary">Resume Previous Operation</button>
-                <button type="button" id="cancel-resume-btn" class="button">Cancel & Start New</button>
+            <div class="zcr-notice zcr-notice-warning">
+                <span class="zcr-notice-icon">⚠️</span>
+                <div class="zcr-notice-content">
+                    <h3>Incomplete Session Detected</h3>
+                    <p>You have an incomplete processing session from a previous upload. Would you like to resume where you left off?</p>
+                    <div class="zcr-notice-actions">
+                        <button type="button" id="resume-processing-btn" class="zcr-btn zcr-btn-primary">
+                            <span>🔄</span> Resume Previous
+                        </button>
+                        <button type="button" id="cancel-resume-btn" class="zcr-btn zcr-btn-secondary">
+                            Start Fresh
+                        </button>
+                    </div>
+                </div>
             </div>
             <?php endif; ?>
             
             <form id="zip-replacer-form" method="post" enctype="multipart/form-data">
-                <table class="form-table">
-                    <tr valign="top">
-                        <th scope="row"><label for="zip_file">ZIP File</label></th>
-                        <td><input type="file" id="zip_file" name="zip_file" accept=".zip" required></td>
-                    </tr>
-                    <tr valign="top">
-                        <th scope="row"><label for="fictioneer_story_id">Select Fictioneer Story</label></th>
-                        <td>
-                            <select name="fictioneer_story_id" id="fictioneer_story_id" required>
-                                <option value="">-- Select a Story --</option>
-                                <?php
-                                $stories = get_posts([
-                                    'post_type'      => 'fcn_story',
-                                    'posts_per_page' => -1,
-                                    'orderby'        => 'title',
-                                    'order'          => 'ASC',
-                                    'post_status'    => 'publish'
-                                ]);
-
-                                if (!empty($stories)) {
-                                    foreach ($stories as $story) {
-                                        printf(
-                                            '<option value="%d">%s (ID: %d)</option>',
-                                            esc_attr($story->ID),
-                                            esc_html($story->post_title),
-                                            esc_html($story->ID)
-                                        );
-                                    }
-                                } else {
-                                    echo '<option value="" disabled>' . esc_html__('No Fictioneer Stories found.', 'zip-content-replacer') . '</option>';
-                                }
-                                ?>
-                            </select>
-                            <p class="description">Only chapters belonging to this story will be considered for updates.</p>
-                        </td>
-                    </tr>
-                    <tr valign="top">
-                        <th scope="row"><label for="match_method">Match Method</label></th>
-                        <td>
-                            <label><input type="radio" name="match_method" value="title" checked> Match by Title</label><br>
-                            <label><input type="radio" name="match_method" value="slug"> Match by Slug (filename)</label>
-                            <p class="description">Choose how to match files to chapters. Title matching requires exact title match, slug matching uses the post slug.</p>
-                        </td>
-                    </tr>
-                    <tr valign="top">
-                        <th scope="row"><label for="batch_size">Processing Options</label></th>
-                        <td>
-                            <input type="checkbox" id="dry_run" name="dry_run" value="1" checked> 
-                            <label for="dry_run">Perform a Dry Run (preview changes without saving).</label>
-                            <br><br>
-                            <input type="checkbox" id="show_preview" name="show_preview" value="1"> 
-                            <label for="show_preview">Show content preview in dry run logs (first 150 characters).</label>
-                            <br><br>
-                            <input type="checkbox" id="backup_content" name="backup_content" value="1" checked> 
-                            <label for="backup_content">Backup original content before updating (allows undo).</label>
-                            <br><br>
-                            <label for="batch_size">Items per batch:</label>
-                            <input type="number" id="batch_size" name="batch_size" value="10" min="1" max="100" style="width: 70px;">
-                            <p class="description">A smaller number is less likely to cause server timeouts.</p>
-                        </td>
-                    </tr>
-                </table>
-                <?php submit_button('Upload and Process', 'primary', 'submit-zip-form'); ?>
-            </form>
-
-            <div id="zip-processing-area" style="display:none; margin-top:20px;">
-                <h2 id="processing-title">Processing...</h2>
-                <div id="zip-progress-container">
-                    <div id="zip-progress-bar" style="width:100%; background:#eee; border:1px solid #ccc; border-radius: 4px; overflow: hidden;">
-                        <div id="zip-progress-fill" style="width:0%; height:24px; background:#46b450; transition: width 0.5s ease-in-out;"></div>
+                <!-- Upload Card -->
+                <div class="zcr-card">
+                    <div class="zcr-card-header">
+                        <h2><span class="zcr-icon">📁</span> Upload ZIP File</h2>
                     </div>
-                    <p id="zip-progress-text" style="text-align: center; margin-top: 5px; font-weight: bold;">Waiting to start...</p>
-                    <p id="zip-eta-text" style="text-align: center; margin-top: 5px; color: #666; font-size: 14px;"></p>
+                    
+                    <div class="zcr-upload-zone" id="upload-zone">
+                        <div class="zcr-upload-default">
+                            <span class="zcr-upload-icon">📦</span>
+                            <h3>Drop your ZIP file here</h3>
+                            <p>or click to browse</p>
+                            <span class="zcr-upload-hint">Supports .txt, .md, .html files • Max 10MB</span>
+                        </div>
+                        <div class="zcr-file-info">
+                            <span>✅</span>
+                            <span id="selected-file-name">No file selected</span>
+                        </div>
+                        <input type="file" id="zip_file" name="zip_file" accept=".zip" required>
+                    </div>
                 </div>
-                <div style="margin: 10px 0;">
-                    <button type="button" id="export-log-btn" class="button" style="display:none;">📥 Download Report</button>
+                
+                <!-- Story Selection Card -->
+                <div class="zcr-card">
+                    <div class="zcr-card-header">
+                        <h2><span class="zcr-icon">📚</span> Select Story</h2>
+                    </div>
+                    
+                    <div class="zcr-form-group">
+                        <label class="zcr-label" for="fictioneer_story_id">
+                            Target Story <span class="zcr-label-hint">— Only chapters from this story will be updated</span>
+                        </label>
+                        <select name="fictioneer_story_id" id="fictioneer_story_id" class="zcr-select" required>
+                            <option value="">Choose a story...</option>
+                            <?php
+                            $stories = get_posts([
+                                'post_type'      => 'fcn_story',
+                                'posts_per_page' => -1,
+                                'orderby'        => 'title',
+                                'order'          => 'ASC',
+                                'post_status'    => 'publish'
+                            ]);
+
+                            if (!empty($stories)) {
+                                foreach ($stories as $story) {
+                                    $chapter_count = count(get_post_meta($story->ID, 'fictioneer_story_chapters', true) ?: []);
+                                    printf(
+                                        '<option value="%d">%s (%d chapters)</option>',
+                                        esc_attr($story->ID),
+                                        esc_html($story->post_title),
+                                        $chapter_count
+                                    );
+                                }
+                            } else {
+                                echo '<option value="" disabled>' . esc_html__('No Fictioneer Stories found.', 'zip-content-replacer') . '</option>';
+                            }
+                            ?>
+                        </select>
+                    </div>
+                    
+                    <div class="zcr-form-group">
+                        <label class="zcr-label">Match Method</label>
+                        <div class="zcr-radio-group">
+                            <div class="zcr-radio-pill">
+                                <input type="radio" name="match_method" id="match_title" value="title" checked>
+                                <label for="match_title">📝 Match by Title</label>
+                            </div>
+                            <div class="zcr-radio-pill">
+                                <input type="radio" name="match_method" id="match_slug" value="slug">
+                                <label for="match_slug">🔗 Match by Slug</label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <h3>Log:</h3>
-                <div id="zip-process-log" style="height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; background: #fafafa; font-family: monospace; font-size: 12px; white-space: pre-wrap;"></div>
+                
+                <!-- Options Card -->
+                <div class="zcr-card">
+                    <div class="zcr-card-header">
+                        <h2><span class="zcr-icon">⚙️</span> Processing Options</h2>
+                    </div>
+                    
+                    <div class="zcr-option-card">
+                        <div class="zcr-option-content">
+                            <div class="zcr-option-title">
+                                <span>🔍</span> Dry Run Mode
+                            </div>
+                            <div class="zcr-option-description">
+                                Preview all changes without actually saving them to the database. Perfect for testing.
+                            </div>
+                        </div>
+                        <label class="zcr-toggle">
+                            <input type="checkbox" id="dry_run" name="dry_run" value="1" checked>
+                            <span class="zcr-toggle-slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div class="zcr-option-card">
+                        <div class="zcr-option-content">
+                            <div class="zcr-option-title">
+                                <span>👁️</span> Show Content Preview
+                            </div>
+                            <div class="zcr-option-description">
+                                Display the first 150 characters of content in dry run logs.
+                            </div>
+                        </div>
+                        <label class="zcr-toggle">
+                            <input type="checkbox" id="show_preview" name="show_preview" value="1">
+                            <span class="zcr-toggle-slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div class="zcr-option-card">
+                        <div class="zcr-option-content">
+                            <div class="zcr-option-title">
+                                <span>💾</span> Backup Original Content
+                            </div>
+                            <div class="zcr-option-description">
+                                Save original chapter content before updating. Allows easy restoration later.
+                            </div>
+                        </div>
+                        <label class="zcr-toggle">
+                            <input type="checkbox" id="backup_content" name="backup_content" value="1" checked>
+                            <span class="zcr-toggle-slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div class="zcr-option-card">
+                        <div class="zcr-option-content">
+                            <div class="zcr-option-title">
+                                <span>📊</span> Batch Size
+                            </div>
+                            <div class="zcr-option-description">
+                                Files processed per request. Lower values prevent server timeouts.
+                            </div>
+                        </div>
+                        <div class="zcr-number-input">
+                            <input type="number" id="batch_size" name="batch_size" value="10" min="1" max="100">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Desktop Submit Button -->
+                <div class="zcr-desktop-actions">
+                    <button type="submit" id="submit-zip-form" class="zcr-btn zcr-btn-primary">
+                        <span>🚀</span> Upload and Process
+                    </button>
+                </div>
+            </form>
+            
+            <!-- Mobile Sticky Actions -->
+            <div class="zcr-sticky-actions">
+                <button type="button" id="submit-zip-form-mobile" class="zcr-btn zcr-btn-primary">
+                    <span>🚀</span> Upload and Process
+                </button>
+            </div>
+
+            <!-- Processing Area -->
+            <div id="zip-processing-area" class="zcr-progress-area">
+                <div class="zcr-card">
+                    <div class="zcr-progress-header">
+                        <div class="zcr-progress-title" id="processing-title">
+                            <span class="zcr-spinner"></span>
+                            Processing...
+                        </div>
+                        <span class="zcr-progress-badge zcr-dry-run" id="dry-run-badge" style="display: none;">DRY RUN</span>
+                    </div>
+
+                    <div class="zcr-progress-bar-container">
+                        <div class="zcr-progress-bar-fill" id="zip-progress-fill"></div>
+                    </div>
+
+                    <div class="zcr-progress-stats">
+                        <span class="zcr-progress-text" id="zip-progress-text">Waiting to start...</span>
+                        <span class="zcr-progress-eta" id="zip-eta-text"></span>
+                    </div>
+                </div>
+                
+                <!-- Console -->
+                <div class="zcr-console">
+                    <div class="zcr-console-header">
+                        <span class="zcr-console-title">
+                            <span>📋</span> Processing Log
+                        </span>
+                        <div class="zcr-console-filters">
+                            <button type="button" class="zcr-console-filter zcr-active" data-filter="all">All</button>
+                            <button type="button" class="zcr-console-filter" data-filter="success">✓ Success</button>
+                            <button type="button" class="zcr-console-filter" data-filter="error">✗ Errors</button>
+                            <button type="button" class="zcr-console-filter" data-filter="warning">⚠ Warnings</button>
+                            <button type="button" class="zcr-console-filter" data-filter="info">ℹ Info</button>
+                        </div>
+                    </div>
+                    <div class="zcr-console-body" id="zip-process-log"></div>
+                </div>
+                
+                <div class="zcr-desktop-actions" style="margin-top: 16px;">
+                    <button type="button" id="export-log-btn" class="zcr-btn zcr-btn-secondary" style="display: none;">
+                        <span>📥</span> Download Report
+                    </button>
+                </div>
             </div>
         </div>
         <?php
@@ -173,9 +309,9 @@ class ZipContentReplacer_Enhanced {
 
     public function restore_page() {
         ?>
-        <div class="wrap">
-            <h1>Restore Chapter Content Backups</h1>
-            <p>This page shows all chapters that have backup content from the ZIP Content Replacer. You can restore individual chapters or delete old backups.</p>
+        <div class="zcr-wrap">
+            <h1>Restore Backups</h1>
+            <p class="zcr-description">Manage backup content created by the ZIP Content Replacer. You can restore individual chapters or delete old backups.</p>
             
             <?php
             $args = array(
@@ -195,70 +331,94 @@ class ZipContentReplacer_Enhanced {
             $chapters_with_backups = get_posts($args);
             
             if (empty($chapters_with_backups)) {
-                echo '<div class="notice notice-info"><p>No backup data found. Process some chapters first using the ZIP Content Replacer.</p></div>';
-            } else {
                 ?>
-                <table class="wp-list-table widefat fixed striped">
-                    <thead>
-                        <tr>
-                            <th style="width: 5%;">ID</th>
-                            <th style="width: 25%;">Chapter Title</th>
-                            <th style="width: 15%;">Story</th>
-                            <th style="width: 20%;">Source File</th>
-                            <th style="width: 15%;">Backup Date</th>
-                            <th style="width: 10%;">Status</th>
-                            <th style="width: 10%;">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($chapters_with_backups as $chapter): 
-                            $backup_time = get_post_meta($chapter->ID, '_zip_replacer_backup_time', true);
-                            $backup_filename = get_post_meta($chapter->ID, '_zip_replacer_backup_filename', true);
-                            $story_id = get_post_meta($chapter->ID, 'fictioneer_chapter_story', true);
-                            $story_title = $story_id ? get_the_title($story_id) : 'N/A';
-                            $post_status_labels = array(
-                                'publish' => __('Published', 'zip-content-replacer'),
-                                'future' => __('Scheduled', 'zip-content-replacer'),
-                                'draft' => __('Draft', 'zip-content-replacer'),
-                                'pending' => __('Pending', 'zip-content-replacer'),
-                                'private' => __('Private', 'zip-content-replacer')
-                            );
-                            $status_label = isset($post_status_labels[$chapter->post_status]) ? $post_status_labels[$chapter->post_status] : $chapter->post_status;
-                        ?>
-                        <tr data-chapter-id="<?php echo esc_attr($chapter->ID); ?>">
-                            <td><?php echo esc_html($chapter->ID); ?></td>
-                            <td>
-                                <strong><?php echo esc_html($chapter->post_title); ?></strong>
-                                <div class="row-actions">
-                                    <span class="edit"><a href="<?php echo get_edit_post_link($chapter->ID); ?>" target="_blank">Edit Chapter</a></span>
-                                </div>
-                            </td>
-                            <td><?php echo esc_html($story_title); ?></td>
-                            <td><?php echo esc_html($backup_filename ? $backup_filename : 'N/A'); ?></td>
-                            <td><?php echo esc_html($backup_time ? date('Y-m-d H:i:s', $backup_time) : 'N/A'); ?></td>
-                            <td>
-                                <span class="status-badge" style="padding: 3px 8px; border-radius: 3px; font-size: 11px; background: <?php 
-                                    echo $chapter->post_status === 'publish' ? '#46b450' : ($chapter->post_status === 'future' ? '#f0ad4e' : '#999'); 
-                                ?>; color: white;">
-                                    <?php echo esc_html($status_label); ?>
-                                </span>
-                            </td>
-                            <td>
-                                <button class="button button-primary restore-backup-btn" data-chapter-id="<?php echo esc_attr($chapter->ID); ?>">
-                                    🔄 Restore
-                                </button>
-                                <button class="button button-link-delete delete-backup-btn" data-chapter-id="<?php echo esc_attr($chapter->ID); ?>" style="color: #b32d2e;">
-                                    🗑️ Delete
-                                </button>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                <div class="zcr-card">
+                    <div class="zcr-empty-state">
+                        <span class="zcr-icon">📦</span>
+                        <h3>No Backups Found</h3>
+                        <p>Process some chapters using the ZIP Content Replacer to create backups.</p>
+                    </div>
+                </div>
+                <?php
+            } else {
+                $backup_count = count($chapters_with_backups);
+                ?>
                 
-                <div style="margin-top: 20px;">
-                    <button id="restore-all-btn" class="button button-secondary">🔄 Restore All Backups</button>
-                    <button id="delete-all-btn" class="button button-link-delete" style="color: #b32d2e; margin-left: 10px;">🗑️ Delete All Backups</button>
+                <!-- Batch Actions Toolbar -->
+                <div class="zcr-batch-toolbar">
+                    <div class="zcr-batch-info">
+                        <strong><?php echo $backup_count; ?></strong> backup<?php echo $backup_count !== 1 ? 's' : ''; ?> available
+                    </div>
+                    <div class="zcr-batch-actions">
+                        <button id="restore-all-btn" class="zcr-btn zcr-btn-secondary">
+                            <span>🔄</span> Restore All
+                        </button>
+                        <button id="delete-all-btn" class="zcr-btn zcr-btn-danger">
+                            <span>🗑️</span> Delete All
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Backup Cards Grid -->
+                <div class="zcr-backup-grid">
+                    <?php foreach ($chapters_with_backups as $chapter): 
+                        $backup_time = get_post_meta($chapter->ID, '_zip_replacer_backup_time', true);
+                        $backup_filename = get_post_meta($chapter->ID, '_zip_replacer_backup_filename', true);
+                        $story_id = get_post_meta($chapter->ID, 'fictioneer_chapter_story', true);
+                        $story_title = $story_id ? get_the_title($story_id) : 'N/A';
+                        
+                        $post_status_labels = array(
+                            'publish' => __('Published', 'zip-content-replacer'),
+                            'future' => __('Scheduled', 'zip-content-replacer'),
+                            'draft' => __('Draft', 'zip-content-replacer'),
+                            'pending' => __('Pending', 'zip-content-replacer'),
+                            'private' => __('Private', 'zip-content-replacer')
+                        );
+                        $status_label = isset($post_status_labels[$chapter->post_status]) ? $post_status_labels[$chapter->post_status] : $chapter->post_status;
+                        
+                        $status_class = 'zcr-draft';
+                        if ($chapter->post_status === 'publish') {
+                            $status_class = 'zcr-published';
+                        } elseif ($chapter->post_status === 'future') {
+                            $status_class = 'zcr-scheduled';
+                        }
+                    ?>
+                    <div class="zcr-backup-card" data-chapter-id="<?php echo esc_attr($chapter->ID); ?>">
+                        <div class="zcr-backup-card-header">
+                            <div>
+                                <h3 class="zcr-backup-card-title"><?php echo esc_html($chapter->post_title); ?></h3>
+                                <span class="zcr-backup-card-id">ID: <?php echo esc_html($chapter->ID); ?></span>
+                            </div>
+                            <span class="zcr-status-badge <?php echo $status_class; ?>">
+                                <?php echo esc_html($status_label); ?>
+                            </span>
+                        </div>
+                        
+                        <div class="zcr-backup-meta">
+                            <div class="zcr-backup-meta-item">
+                                <span class="zcr-icon">📚</span>
+                                <span><?php echo esc_html($story_title); ?></span>
+                            </div>
+                            <div class="zcr-backup-meta-item">
+                                <span class="zcr-icon">📁</span>
+                                <span><?php echo esc_html($backup_filename ? $backup_filename : 'N/A'); ?></span>
+                            </div>
+                            <div class="zcr-backup-meta-item">
+                                <span class="zcr-icon">📅</span>
+                                <span><?php echo esc_html($backup_time ? date_i18n('M j, Y \a\t g:i A', $backup_time) : 'N/A'); ?></span>
+                            </div>
+                        </div>
+                        
+                        <div class="zcr-backup-actions">
+                            <button class="zcr-btn zcr-btn-primary restore-backup-btn" data-chapter-id="<?php echo esc_attr($chapter->ID); ?>">
+                                <span>🔄</span> Restore
+                            </button>
+                            <button class="zcr-btn zcr-btn-ghost delete-backup-btn" data-chapter-id="<?php echo esc_attr($chapter->ID); ?>">
+                                <span>🗑️</span> Delete
+                            </button>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
                 </div>
                 <?php
             }
@@ -272,13 +432,14 @@ class ZipContentReplacer_Enhanced {
             $('.restore-backup-btn').on('click', function() {
                 const btn = $(this);
                 const chapterId = btn.data('chapter-id');
-                const row = btn.closest('tr');
+                const card = btn.closest('.zcr-backup-card');
                 
                 if (!confirm('Are you sure you want to restore this chapter to its backup content?')) {
                     return;
                 }
                 
-                btn.prop('disabled', true).text('Restoring...');
+                const originalHtml = btn.html();
+                btn.prop('disabled', true).html('<span class="zcr-spinner"></span> Restoring...');
                 
                 $.ajax({
                     url: ajaxurl,
@@ -290,17 +451,20 @@ class ZipContentReplacer_Enhanced {
                     },
                     success: function(response) {
                         if (response.success) {
-                            row.css('background-color', '#d4edda');
+                            card.css({
+                                'background': 'var(--zcr-success-light)',
+                                'border-color': 'var(--zcr-success)'
+                            });
                             alert('✅ ' + response.data.message);
                             location.reload();
                         } else {
                             alert('❌ Error: ' + response.data.message);
-                            btn.prop('disabled', false).text('🔄 Restore');
+                            btn.prop('disabled', false).html(originalHtml);
                         }
                     },
                     error: function() {
                         alert('❌ An error occurred during restoration.');
-                        btn.prop('disabled', false).text('🔄 Restore');
+                        btn.prop('disabled', false).html(originalHtml);
                     }
                 });
             });
@@ -308,13 +472,14 @@ class ZipContentReplacer_Enhanced {
             $('.delete-backup-btn').on('click', function() {
                 const btn = $(this);
                 const chapterId = btn.data('chapter-id');
-                const row = btn.closest('tr');
+                const card = btn.closest('.zcr-backup-card');
                 
                 if (!confirm('Are you sure you want to delete this backup? This cannot be undone.')) {
                     return;
                 }
                 
-                btn.prop('disabled', true).text('Deleting...');
+                const originalHtml = btn.html();
+                btn.prop('disabled', true).html('<span class="zcr-spinner"></span>');
                 
                 $.ajax({
                     url: ajaxurl,
@@ -326,37 +491,46 @@ class ZipContentReplacer_Enhanced {
                     },
                     success: function(response) {
                         if (response.success) {
-                            row.fadeOut(300, function() { $(this).remove(); });
-                            alert('✅ ' + response.data.message);
+                            card.css('opacity', '0.5').slideUp(300, function() { 
+                                $(this).remove();
+                                // Update count
+                                const remaining = $('.zcr-backup-card').length;
+                                if (remaining === 0) {
+                                    location.reload();
+                                } else {
+                                    $('.zcr-batch-info strong').text(remaining);
+                                }
+                            });
                         } else {
                             alert('❌ Error: ' + response.data.message);
-                            btn.prop('disabled', false).text('🗑️ Delete');
+                            btn.prop('disabled', false).html(originalHtml);
                         }
                     },
                     error: function() {
                         alert('❌ An error occurred during deletion.');
-                        btn.prop('disabled', false).text('🗑️ Delete');
+                        btn.prop('disabled', false).html(originalHtml);
                     }
                 });
             });
             
             $('#restore-all-btn').on('click', async function() {
-                if (!confirm('Are you sure you want to restore ALL chapters to their backup content? This will process ' + $('.restore-backup-btn').length + ' chapters.')) {
+                const totalCount = $('.restore-backup-btn').length;
+                if (!confirm('Are you sure you want to restore ALL ' + totalCount + ' chapters to their backup content?')) {
                     return;
                 }
                 
                 const btn = $(this);
+                const originalHtml = btn.html();
                 btn.prop('disabled', true);
                 $('#delete-all-btn').prop('disabled', true);
                 
                 const buttons = $('.restore-backup-btn').toArray();
-                const total = buttons.length;
                 let completed = 0;
                 let errors = 0;
                 
                 for (const button of buttons) {
                     const chapterId = $(button).data('chapter-id');
-                    btn.text('Restoring... (' + (completed + 1) + '/' + total + ')');
+                    btn.html('<span class="zcr-spinner"></span> ' + (completed + 1) + '/' + totalCount);
                     
                     try {
                         await $.ajax({
@@ -383,7 +557,8 @@ class ZipContentReplacer_Enhanced {
             });
             
             $('#delete-all-btn').on('click', async function() {
-                if (!confirm('Are you sure you want to DELETE ALL backups? This cannot be undone and will remove backup data for ' + $('.delete-backup-btn').length + ' chapters.')) {
+                const totalCount = $('.delete-backup-btn').length;
+                if (!confirm('⚠️ DANGER: Are you sure you want to DELETE ALL ' + totalCount + ' backups? This cannot be undone!')) {
                     return;
                 }
                 
@@ -392,13 +567,12 @@ class ZipContentReplacer_Enhanced {
                 $('#restore-all-btn').prop('disabled', true);
                 
                 const buttons = $('.delete-backup-btn').toArray();
-                const total = buttons.length;
                 let completed = 0;
                 let errors = 0;
                 
                 for (const button of buttons) {
                     const chapterId = $(button).data('chapter-id');
-                    btn.text('Deleting... (' + (completed + 1) + '/' + total + ')');
+                    btn.html('<span class="zcr-spinner"></span> ' + (completed + 1) + '/' + totalCount);
                     
                     try {
                         await $.ajax({
@@ -425,17 +599,6 @@ class ZipContentReplacer_Enhanced {
             });
         });
         </script>
-        
-        <style>
-        .wp-list-table th, .wp-list-table td {
-            vertical-align: middle;
-        }
-        .status-badge {
-            display: inline-block;
-            text-transform: uppercase;
-            font-weight: 600;
-        }
-        </style>
         <?php
     }
 
