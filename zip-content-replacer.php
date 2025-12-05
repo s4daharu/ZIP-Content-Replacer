@@ -1,12 +1,25 @@
 <?php
 /**
  * Plugin Name: ZIP Content Replacer Enhanced
- * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, dry run mode, backup/restore functionality, and advanced features.
- * Version: 3.0.0
+ * Plugin URI: https://github.com/MarineTL/zip-content-replacer
+ * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, dry run mode, backup/restore functionality, and advanced features. Designed for Fictioneer theme.
+ * Version: 3.1.0
  * Author: MarineTL
+ * Author URI: https://github.com/MarineTL
+ * Text Domain: zip-content-replacer
+ * Domain Path: /languages
+ * Requires at least: 5.0
+ * Requires PHP: 7.4
+ * License: GPL v2 or later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  */
 
 if (!defined('ABSPATH')) exit;
+
+// Define plugin constants
+define('ZIP_CONTENT_REPLACER_VERSION', '3.1.0');
+define('ZIP_CONTENT_REPLACER_PLUGIN_DIR', plugin_dir_path(__FILE__));
+define('ZIP_CONTENT_REPLACER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 class ZipContentReplacer_Enhanced {
     private $max_file_size = 10485760; // 10MB
@@ -40,8 +53,20 @@ class ZipContentReplacer_Enhanced {
     }
 
     public function add_admin_menu() {
-        add_management_page('ZIP Content Replacer', 'ZIP Content Replacer', 'manage_options', 'zip-content-replacer', array($this, 'admin_page'));
-        add_management_page('Restore Backups', 'Restore Backups', 'manage_options', 'zip-content-restorer', array($this, 'restore_page'));
+        add_management_page(
+            __('ZIP Content Replacer', 'zip-content-replacer'),
+            __('ZIP Content Replacer', 'zip-content-replacer'),
+            'manage_options',
+            'zip-content-replacer',
+            array($this, 'admin_page')
+        );
+        add_management_page(
+            __('Restore Backups', 'zip-content-replacer'),
+            __('Restore Backups', 'zip-content-replacer'),
+            'manage_options',
+            'zip-content-restorer',
+            array($this, 'restore_page')
+        );
     }
 
     public function admin_page() {
@@ -83,10 +108,15 @@ class ZipContentReplacer_Enhanced {
 
                                 if (!empty($stories)) {
                                     foreach ($stories as $story) {
-                                        echo "<option value='{$story->ID}'>{$story->post_title} (ID: {$story->ID})</option>";
+                                        printf(
+                                            '<option value="%d">%s (ID: %d)</option>',
+                                            esc_attr($story->ID),
+                                            esc_html($story->post_title),
+                                            esc_html($story->ID)
+                                        );
                                     }
                                 } else {
-                                    echo "<option value='' disabled>No Fictioneer Stories found.</option>";
+                                    echo '<option value="" disabled>' . esc_html__('No Fictioneer Stories found.', 'zip-content-replacer') . '</option>';
                                 }
                                 ?>
                             </select>
@@ -151,7 +181,7 @@ class ZipContentReplacer_Enhanced {
             $args = array(
                 'post_type' => 'fcn_chapter',
                 'posts_per_page' => -1,
-                'post_status' => array('publish', 'future', 'draft', 'pending'),
+                'post_status' => array('publish', 'future', 'draft', 'pending', 'private'),
                 'meta_query' => array(
                     array(
                         'key' => '_zip_replacer_backup',
@@ -187,10 +217,11 @@ class ZipContentReplacer_Enhanced {
                             $story_id = get_post_meta($chapter->ID, 'fictioneer_chapter_story', true);
                             $story_title = $story_id ? get_the_title($story_id) : 'N/A';
                             $post_status_labels = array(
-                                'publish' => 'Published',
-                                'future' => 'Scheduled',
-                                'draft' => 'Draft',
-                                'pending' => 'Pending'
+                                'publish' => __('Published', 'zip-content-replacer'),
+                                'future' => __('Scheduled', 'zip-content-replacer'),
+                                'draft' => __('Draft', 'zip-content-replacer'),
+                                'pending' => __('Pending', 'zip-content-replacer'),
+                                'private' => __('Private', 'zip-content-replacer')
                             );
                             $status_label = isset($post_status_labels[$chapter->post_status]) ? $post_status_labels[$chapter->post_status] : $chapter->post_status;
                         ?>
@@ -309,70 +340,88 @@ class ZipContentReplacer_Enhanced {
                 });
             });
             
-            $('#restore-all-btn').on('click', function() {
+            $('#restore-all-btn').on('click', async function() {
                 if (!confirm('Are you sure you want to restore ALL chapters to their backup content? This will process ' + $('.restore-backup-btn').length + ' chapters.')) {
                     return;
                 }
                 
                 const btn = $(this);
-                btn.prop('disabled', true).text('Restoring all...');
+                btn.prop('disabled', true);
+                $('#delete-all-btn').prop('disabled', true);
                 
+                const buttons = $('.restore-backup-btn').toArray();
+                const total = buttons.length;
                 let completed = 0;
-                const total = $('.restore-backup-btn').length;
+                let errors = 0;
                 
-                $('.restore-backup-btn').each(function() {
-                    const chapterId = $(this).data('chapter-id');
+                for (const button of buttons) {
+                    const chapterId = $(button).data('chapter-id');
+                    btn.text('Restoring... (' + (completed + 1) + '/' + total + ')');
                     
-                    $.ajax({
-                        url: ajaxurl,
-                        method: 'POST',
-                        data: {
-                            action: 'restore_backup',
-                            nonce: '<?php echo wp_create_nonce('restore_backup_nonce'); ?>',
-                            chapter_id: chapterId
-                        },
-                        success: function() {
-                            completed++;
-                            if (completed === total) {
-                                alert('✅ All backups restored successfully!');
-                                location.reload();
+                    try {
+                        await $.ajax({
+                            url: ajaxurl,
+                            method: 'POST',
+                            data: {
+                                action: 'restore_backup',
+                                nonce: '<?php echo wp_create_nonce('restore_backup_nonce'); ?>',
+                                chapter_id: chapterId
                             }
-                        }
-                    });
-                });
+                        });
+                        completed++;
+                    } catch (e) {
+                        errors++;
+                    }
+                }
+                
+                if (errors > 0) {
+                    alert('Restored ' + completed + ' chapters. ' + errors + ' failed.');
+                } else {
+                    alert('✅ All ' + completed + ' backups restored successfully!');
+                }
+                location.reload();
             });
             
-            $('#delete-all-btn').on('click', function() {
+            $('#delete-all-btn').on('click', async function() {
                 if (!confirm('Are you sure you want to DELETE ALL backups? This cannot be undone and will remove backup data for ' + $('.delete-backup-btn').length + ' chapters.')) {
                     return;
                 }
                 
                 const btn = $(this);
-                btn.prop('disabled', true).text('Deleting all...');
+                btn.prop('disabled', true);
+                $('#restore-all-btn').prop('disabled', true);
                 
+                const buttons = $('.delete-backup-btn').toArray();
+                const total = buttons.length;
                 let completed = 0;
-                const total = $('.delete-backup-btn').length;
+                let errors = 0;
                 
-                $('.delete-backup-btn').each(function() {
-                    const chapterId = $(this).data('chapter-id');
+                for (const button of buttons) {
+                    const chapterId = $(button).data('chapter-id');
+                    btn.text('Deleting... (' + (completed + 1) + '/' + total + ')');
                     
-                    $.ajax({
-                        url: ajaxurl,
-                        method: 'POST',
-                        data: {
-                            action: 'delete_backup',
-                            nonce: '<?php echo wp_create_nonce('delete_backup_nonce'); ?>',
-                            chapter_id: chapterId
-                        },
-                        success: function() {
-                            completed++;
-                            if (completed === total) {
-                                alert('✅ All backups deleted successfully!');
-                                location.reload();
+                    try {
+                        await $.ajax({
+                            url: ajaxurl,
+                            method: 'POST',
+                            data: {
+                                action: 'delete_backup',
+                                nonce: '<?php echo wp_create_nonce('delete_backup_nonce'); ?>',
+                                chapter_id: chapterId
                             }
-                        }
-                    });
-                });
+                        });
+                        completed++;
+                    } catch (e) {
+                        errors++;
+                    }
+                }
+                
+                if (errors > 0) {
+                    alert('Deleted ' + completed + ' backups. ' + errors + ' failed.');
+                } else {
+                    alert('✅ All ' + completed + ' backups deleted successfully!');
+                }
+                location.reload();
             });
         });
         </script>
@@ -467,8 +516,14 @@ class ZipContentReplacer_Enhanced {
             }
         }
 
-        if ($file['size'] > $this->max_file_size) {
-            wp_send_json_error(['message' => 'Error: File is larger than the allowed limit of 10MB.']);
+        $max_size = $this->get_max_file_size();
+        if ($file['size'] > $max_size) {
+            $max_mb = round($max_size / 1048576, 1);
+            wp_send_json_error(['message' => sprintf(
+                /* translators: %s: Maximum file size in MB */
+                __('Error: File is larger than the allowed limit of %sMB.', 'zip-content-replacer'),
+                $max_mb
+            )]);
         }
         
         $upload_dir = wp_upload_dir();
@@ -609,9 +664,27 @@ class ZipContentReplacer_Enhanced {
                         update_post_meta($post->ID, '_zip_replacer_backup_filename', $filename);
                     }
 
+                    /**
+                     * Fires before a chapter is updated with new content.
+                     * 
+                     * @param int    $post_id  The chapter post ID.
+                     * @param string $content  The new content to be applied.
+                     * @param string $filename The source filename from the ZIP.
+                     */
+                    do_action('zip_content_replacer_before_update', $post->ID, $content, $filename);
+
+                    /**
+                     * Filter the content before saving.
+                     * 
+                     * @param string $content  The content to be saved.
+                     * @param string $filename The source filename from the ZIP.
+                     * @param int    $post_id  The chapter post ID.
+                     */
+                    $processed_content = apply_filters('zip_content_replacer_content', wp_kses_post(wpautop($content)), $filename, $post->ID);
+
                     $updated = wp_update_post([
                         'ID' => $post->ID,
-                        'post_content' => wp_kses_post(wpautop($content))
+                        'post_content' => $processed_content
                     ]);
 
                     if (is_wp_error($updated)) {
@@ -620,6 +693,20 @@ class ZipContentReplacer_Enhanced {
                     } elseif ($updated === 0) {
                         $logs[] = "<span style='color: #666;'>ℹ️ INFO: Chapter '{$filename_base}' (ID: {$post->ID}) found but no content changes detected.</span>";
                     } else {
+                        /**
+                         * Fires after a chapter has been successfully updated.
+                         * 
+                         * @param int    $post_id  The chapter post ID.
+                         * @param string $content  The new content that was applied.
+                         * @param string $filename The source filename from the ZIP.
+                         */
+                        do_action('zip_content_replacer_after_update', $post->ID, $content, $filename);
+
+                        // Attempt to refresh Fictioneer caches if available
+                        if (function_exists('fictioneer_refresh_post_caches')) {
+                            fictioneer_refresh_post_caches($post->ID);
+                        }
+
                         $logs[] = "<span style='color: green;'>✅ SUCCESS: Updated chapter '{$filename_base}' (ID: {$post->ID}) for story ID {$fictioneer_story_id}.</span>";
                     }
                 } else {
@@ -672,31 +759,50 @@ class ZipContentReplacer_Enhanced {
             return $cached;
         }
 
-        $args = [
-            'post_type' => 'fcn_chapter',
-            'posts_per_page' => -1,
-            'post_status' => ['publish', 'future', 'draft', 'pending'],
-            'meta_query' => [
-                [
-                    'key' => 'fictioneer_chapter_story',
-                    'value' => $story_id,
-                    'compare' => '=',
-                    'type' => 'NUMERIC'
-                ]
-            ],
-            'fields' => 'ids'
-        ];
+        // Try to use Fictioneer's helper first (more efficient, maintains order)
+        $chapter_ids = null;
+        if (function_exists('fictioneer_get_story_chapter_ids')) {
+            $chapter_ids = fictioneer_get_story_chapter_ids($story_id);
+        }
 
-        $chapter_ids = get_posts($args);
+        // Fallback: direct meta read or query
+        if (empty($chapter_ids)) {
+            // Try reading from story meta directly
+            $stored_chapters = get_post_meta($story_id, 'fictioneer_story_chapters', true);
+            if (is_array($stored_chapters) && !empty($stored_chapters)) {
+                $chapter_ids = $stored_chapters;
+            } else {
+                // Final fallback: query by meta
+                $args = [
+                    'post_type' => 'fcn_chapter',
+                    'posts_per_page' => -1,
+                    'post_status' => ['publish', 'future', 'draft', 'pending', 'private'],
+                    'meta_query' => [
+                        [
+                            'key' => 'fictioneer_chapter_story',
+                            'value' => $story_id,
+                            'compare' => '=',
+                            'type' => 'NUMERIC'
+                        ]
+                    ],
+                    'fields' => 'ids'
+                ];
+                $chapter_ids = get_posts($args);
+            }
+        }
+
         $map = [];
-
         foreach ($chapter_ids as $chapter_id) {
+            // Verify post exists and is right type
+            $post = get_post($chapter_id);
+            if (!$post || $post->post_type !== 'fcn_chapter') {
+                continue;
+            }
+
             if ($match_method === 'slug') {
-                $post = get_post($chapter_id);
                 $map[$post->post_name] = $chapter_id;
             } else {
-                $title = get_the_title($chapter_id);
-                $map[$title] = $chapter_id;
+                $map[$post->post_title] = $chapter_id;
             }
         }
 
@@ -709,7 +815,7 @@ class ZipContentReplacer_Enhanced {
             'post_type' => $post_type,
             'name' => $slug,
             'posts_per_page' => 1,
-            'post_status' => ['publish', 'future', 'draft', 'pending'],
+            'post_status' => ['publish', 'future', 'draft', 'pending', 'private'],
             'meta_query' => [
                 [
                     'key' => 'fictioneer_chapter_story',
@@ -730,7 +836,7 @@ class ZipContentReplacer_Enhanced {
                 'post_type' => $post_type,
                 'name' => sanitize_title($identifier),
                 'posts_per_page' => -1,
-                'post_status' => ['publish', 'future', 'draft', 'pending'],
+                'post_status' => ['publish', 'future', 'draft', 'pending', 'private'],
                 'meta_query' => [
                     [
                         'key' => 'fictioneer_chapter_story',
@@ -746,7 +852,7 @@ class ZipContentReplacer_Enhanced {
                 'post_type' => $post_type,
                 'title' => $identifier,
                 'posts_per_page' => -1,
-                'post_status' => ['publish', 'future', 'draft', 'pending'],
+                'post_status' => ['publish', 'future', 'draft', 'pending', 'private'],
                 'meta_query' => [
                     [
                         'key' => 'fictioneer_chapter_story',
@@ -765,7 +871,17 @@ class ZipContentReplacer_Enhanced {
 
     private function is_supported_file($filename) {
         $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-        return in_array($ext, $this->allowed_extensions);
+        $allowed = apply_filters('zip_content_replacer_allowed_extensions', $this->allowed_extensions);
+        return in_array($ext, $allowed);
+    }
+
+    /**
+     * Get maximum allowed file size.
+     * 
+     * @return int Maximum file size in bytes.
+     */
+    private function get_max_file_size() {
+        return apply_filters('zip_content_replacer_max_file_size', $this->max_file_size);
     }
 
     public function restore_backup_ajax() {
