@@ -3,7 +3,7 @@
  * Plugin Name: ZIP Content Replacer Enhanced
  * Plugin URI: https://github.com/MarineTL/zip-content-replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, dry run mode, backup/restore functionality, and advanced features. Designed for Fictioneer theme.
- * Version: 3.1.2
+ * Version: 3.2.0
  * Author: MarineTL
  * Author URI: https://github.com/MarineTL
  * Text Domain: zip-content-replacer
@@ -18,7 +18,7 @@ if (!defined('ABSPATH'))
     exit;
 
 // Define plugin constants
-define('ZIP_CONTENT_REPLACER_VERSION', '3.1.2');
+define('ZIP_CONTENT_REPLACER_VERSION', '3.2.0');
 define('ZIP_CONTENT_REPLACER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('ZIP_CONTENT_REPLACER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -863,7 +863,8 @@ class ZipContentReplacer_Enhanced
                      * @param string $filename The source filename from the ZIP.
                      * @param int    $post_id  The chapter post ID.
                      */
-                    $processed_content = apply_filters('zip_content_replacer_content', wp_kses_post(wpautop($content)), $filename, $post->ID);
+                    $processed_content = $this->process_file_content($content, $filename);
+                    $processed_content = apply_filters('zip_content_replacer_content', $processed_content, $filename, $post->ID);
 
                     $updated = wp_update_post([
                         'ID' => $post->ID,
@@ -1071,6 +1072,160 @@ class ZipContentReplacer_Enhanced
     private function get_max_file_size()
     {
         return apply_filters('zip_content_replacer_max_file_size', $this->max_file_size);
+    }
+
+    /**
+     * Process file content based on extension.
+     * Converts markdown to HTML and wraps output in Gutenberg block format.
+     * 
+     * @param string $content Raw file content.
+     * @param string $filename Original filename.
+     * @return string Processed content with Gutenberg block markers.
+     */
+    private function process_file_content($content, $filename)
+    {
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        $html = '';
+
+        switch ($ext) {
+            case 'md':
+                // Use Parsedown for markdown - check if bulk upload plugin's function exists
+                if (function_exists('bcu_markdown_to_html')) {
+                    $html = bcu_markdown_to_html($content);
+                } else {
+                    // Fallback: load local Parsedown if available, otherwise use wpautop
+                    $parsedown_path = ZIP_CONTENT_REPLACER_PLUGIN_DIR . 'includes/Parsedown.php';
+                    if (file_exists($parsedown_path)) {
+                        require_once $parsedown_path;
+                        static $parsedown = null;
+                        if ($parsedown === null) {
+                            $parsedown = new Parsedown();
+                            $parsedown->setSafeMode(true);
+                            $parsedown->setBreaksEnabled(true);
+                        }
+                        $html = $parsedown->text($content);
+                    } else {
+                        // Basic fallback without markdown
+                        $html = wpautop(wp_kses_post($content));
+                    }
+                }
+                break;
+            case 'html':
+            case 'htm':
+                // Already HTML, sanitize and use as-is
+                $html = wp_kses_post($content);
+                break;
+            case 'txt':
+            default:
+                // Plain text - convert to paragraphs
+                $html = wpautop(wp_kses_post($content));
+                break;
+        }
+
+        // Convert to Gutenberg block format
+        return $this->html_to_gutenberg_blocks($html);
+    }
+
+    /**
+     * Convert raw HTML to Gutenberg block format.
+     * 
+     * @param string $html Raw HTML content.
+     * @return string HTML with Gutenberg block markers.
+     */
+    private function html_to_gutenberg_blocks($html)
+    {
+        // Use bulk upload plugin's function if available
+        if (function_exists('bcu_html_to_blocks')) {
+            return bcu_html_to_blocks($html);
+        }
+
+        // Don't process if already has block markers
+        if (strpos($html, '<!-- wp:') !== false) {
+            return $html;
+        }
+
+        $html = trim($html);
+        if (empty($html)) {
+            return '';
+        }
+
+        // Use DOMDocument for reliable HTML parsing
+        $dom = new DOMDocument();
+        libxml_use_internal_errors(true);
+        $dom->loadHTML('<?xml encoding="UTF-8"><div id="zcr-wrapper">' . $html . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+
+        $wrapper = $dom->getElementById('zcr-wrapper');
+        if (!$wrapper) {
+            // Fallback: wrap everything in a paragraph block
+            return "<!-- wp:paragraph -->\n<p>" . $html . "</p>\n<!-- /wp:paragraph -->";
+        }
+
+        $output = '';
+
+        foreach ($wrapper->childNodes as $node) {
+            if ($node->nodeType === XML_TEXT_NODE) {
+                $text = trim($node->textContent);
+                if (!empty($text)) {
+                    $output .= "<!-- wp:paragraph -->\n<p>" . esc_html($text) . "</p>\n<!-- /wp:paragraph -->\n\n";
+                }
+                continue;
+            }
+
+            if ($node->nodeType !== XML_ELEMENT_NODE) {
+                continue;
+            }
+
+            $tagName = strtolower($node->nodeName);
+            $outerHtml = $dom->saveHTML($node);
+
+            switch ($tagName) {
+                case 'p':
+                    $output .= "<!-- wp:paragraph -->\n" . $outerHtml . "\n<!-- /wp:paragraph -->\n\n";
+                    break;
+
+                case 'h1':
+                case 'h2':
+                case 'h3':
+                case 'h4':
+                case 'h5':
+                case 'h6':
+                    $level = substr($tagName, 1);
+                    $output .= "<!-- wp:heading {\"level\":" . $level . "} -->\n" . $outerHtml . "\n<!-- /wp:heading -->\n\n";
+                    break;
+
+                case 'ul':
+                    $output .= "<!-- wp:list -->\n" . $outerHtml . "\n<!-- /wp:list -->\n\n";
+                    break;
+
+                case 'ol':
+                    $output .= "<!-- wp:list {\"ordered\":true} -->\n" . $outerHtml . "\n<!-- /wp:list -->\n\n";
+                    break;
+
+                case 'blockquote':
+                    $output .= "<!-- wp:quote -->\n" . $outerHtml . "\n<!-- /wp:quote -->\n\n";
+                    break;
+
+                case 'pre':
+                    $output .= "<!-- wp:code -->\n" . $outerHtml . "\n<!-- /wp:code -->\n\n";
+                    break;
+
+                case 'hr':
+                    $output .= "<!-- wp:separator -->\n<hr class=\"wp-block-separator\"/>\n<!-- /wp:separator -->\n\n";
+                    break;
+
+                case 'table':
+                    $output .= "<!-- wp:table -->\n<figure class=\"wp-block-table\">" . $outerHtml . "</figure>\n<!-- /wp:table -->\n\n";
+                    break;
+
+                default:
+                    // For unknown elements, just output as-is
+                    $output .= $outerHtml . "\n\n";
+                    break;
+            }
+        }
+
+        return apply_filters('zip_content_replacer_gutenberg_blocks', trim($output));
     }
 
     public function restore_backup_ajax()
