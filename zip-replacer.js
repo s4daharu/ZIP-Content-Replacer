@@ -1,6 +1,6 @@
 /**
  * ZIP Content Replacer - Modern Admin JavaScript
- * Version: 3.1.0
+ * Version: 3.1.2
  * 
  * Enhanced with drag-and-drop, log filtering, and mobile support
  */
