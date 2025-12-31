@@ -3,7 +3,7 @@
  * Plugin Name: ZIP Content Replacer Enhanced
  * Plugin URI: https://github.com/MarineTL/zip-content-replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, dry run mode, backup/restore functionality, and advanced features. Designed for Fictioneer theme.
- * Version: 3.2.4
+ * Version: 3.2.5
  * Author: MarineTL
  * Author URI: https://github.com/MarineTL
  * Text Domain: zip-content-replacer
@@ -18,7 +18,7 @@ if (!defined('ABSPATH'))
     exit;
 
 // Define plugin constants
-define('ZIP_CONTENT_REPLACER_VERSION', '3.2.4');
+define('ZIP_CONTENT_REPLACER_VERSION', '3.2.5');
 define('ZIP_CONTENT_REPLACER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('ZIP_CONTENT_REPLACER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -1230,7 +1230,9 @@ class ZipContentReplacer_Enhanced
                     // Handle footnotes container from ParsedownExtra
                     $class = $node->getAttribute('class');
                     if (strpos($class, 'footnotes') !== false) {
-                        $output .= "<!-- wp:html -->\n" . $outerHtml . "\n<!-- /wp:html -->\n\n";
+                        // Output footnotes as raw HTML (no block wrapper needed)
+                        // This renders properly in Fictioneer theme
+                        $output .= $outerHtml . "\n\n";
                     } else {
                         // Other divs - wrap as group block
                         $output .= "<!-- wp:group -->\n" . $outerHtml . "\n<!-- /wp:group -->\n\n";
