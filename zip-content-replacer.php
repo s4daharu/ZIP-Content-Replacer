@@ -3,7 +3,7 @@
  * Plugin Name: ZIP Content Replacer Enhanced
  * Plugin URI: https://github.com/MarineTL/zip-content-replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, dry run mode, backup/restore functionality, and advanced features. Designed for Fictioneer theme.
- * Version: 3.2.3
+ * Version: 3.2.4
  * Author: MarineTL
  * Author URI: https://github.com/MarineTL
  * Text Domain: zip-content-replacer
@@ -18,7 +18,7 @@ if (!defined('ABSPATH'))
     exit;
 
 // Define plugin constants
-define('ZIP_CONTENT_REPLACER_VERSION', '3.2.3');
+define('ZIP_CONTENT_REPLACER_VERSION', '3.2.4');
 define('ZIP_CONTENT_REPLACER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('ZIP_CONTENT_REPLACER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -1097,24 +1097,20 @@ class ZipContentReplacer_Enhanced
                     $parsedown_path = ZIP_CONTENT_REPLACER_PLUGIN_DIR . 'includes/Parsedown.php';
                     $parsedown_extra_path = ZIP_CONTENT_REPLACER_PLUGIN_DIR . 'includes/ParsedownExtra.php';
 
-                    static $parsedown = null;
-
                     if (file_exists($parsedown_extra_path) && file_exists($parsedown_path)) {
                         require_once $parsedown_path;
                         require_once $parsedown_extra_path;
-                        if ($parsedown === null) {
-                            $parsedown = new ParsedownExtra();
-                            $parsedown->setSafeMode(true);
-                            $parsedown->setBreaksEnabled(true);
-                        }
+                        // Create new instance each time to reset footnote counter per chapter
+                        $parsedown = new ParsedownExtra();
+                        $parsedown->setSafeMode(true);
+                        $parsedown->setBreaksEnabled(true);
                         $html = $parsedown->text($content);
                     } elseif (file_exists($parsedown_path)) {
                         require_once $parsedown_path;
-                        if ($parsedown === null) {
-                            $parsedown = new Parsedown();
-                            $parsedown->setSafeMode(true);
-                            $parsedown->setBreaksEnabled(true);
-                        }
+                        // Create new instance each time to reset footnote counter per chapter
+                        $parsedown = new Parsedown();
+                        $parsedown->setSafeMode(true);
+                        $parsedown->setBreaksEnabled(true);
                         $html = $parsedown->text($content);
                     } else {
                         // Basic fallback without markdown
