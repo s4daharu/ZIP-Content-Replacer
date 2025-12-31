@@ -1101,14 +1101,14 @@ class ZipContentReplacer_Enhanced
                         require_once $parsedown_path;
                         require_once $parsedown_extra_path;
                         // Create new instance each time to reset footnote counter per chapter
-                        $parsedown = new ParsedownExtra();
+                        $parsedown = new ZCR_ParsedownExtra();
                         $parsedown->setSafeMode(true);
                         $parsedown->setBreaksEnabled(true);
                         $html = $parsedown->text($content);
                     } elseif (file_exists($parsedown_path)) {
                         require_once $parsedown_path;
                         // Create new instance each time to reset footnote counter per chapter
-                        $parsedown = new Parsedown();
+                        $parsedown = new ZCR_Parsedown();
                         $parsedown->setSafeMode(true);
                         $parsedown->setBreaksEnabled(true);
                         $html = $parsedown->text($content);

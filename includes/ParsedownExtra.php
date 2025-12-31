@@ -1,5 +1,5 @@
 <?php
-class ParsedownExtra extends Parsedown
+class ZCR_ParsedownExtra extends ZCR_Parsedown
 {
     # ~
 
