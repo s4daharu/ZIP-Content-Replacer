@@ -3,7 +3,7 @@
  * Plugin Name: ZIP Content Replacer Enhanced
  * Plugin URI: https://github.com/MarineTL/zip-content-replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, dry run mode, backup/restore functionality, and advanced features. Designed for Fictioneer theme.
- * Version: 3.2.5
+ * Version: 3.2.7
  * Author: MarineTL
  * Author URI: https://github.com/MarineTL
  * Text Domain: zip-content-replacer
@@ -18,7 +18,7 @@ if (!defined('ABSPATH'))
     exit;
 
 // Define plugin constants
-define('ZIP_CONTENT_REPLACER_VERSION', '3.2.5');
+define('ZIP_CONTENT_REPLACER_VERSION', '3.2.7');
 define('ZIP_CONTENT_REPLACER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('ZIP_CONTENT_REPLACER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -1089,29 +1089,24 @@ class ZipContentReplacer_Enhanced
 
         switch ($ext) {
             case 'md':
-                // Use Parsedown for markdown - check if bulk upload plugin's function exists
+                // Use Bulk Upload plugin's markdown handler if available
                 if (function_exists('bcu_markdown_to_html')) {
                     $html = bcu_markdown_to_html($content);
                 } else {
-                    // Fallback: load local Parsedown if available, otherwise use wpautop
-                    $parsedown_path = ZIP_CONTENT_REPLACER_PLUGIN_DIR . 'includes/Parsedown.php';
-                    $parsedown_extra_path = ZIP_CONTENT_REPLACER_PLUGIN_DIR . 'includes/ParsedownExtra.php';
+                    // Fallback: load local Michelf Markdown if available
+                    $michelf_path = ZIP_CONTENT_REPLACER_PLUGIN_DIR . 'includes/Michelf/Markdown.inc.php';
+                    $michelf_extra_path = ZIP_CONTENT_REPLACER_PLUGIN_DIR . 'includes/Michelf/MarkdownExtra.inc.php';
 
-                    if (file_exists($parsedown_extra_path) && file_exists($parsedown_path)) {
-                        require_once $parsedown_path;
-                        require_once $parsedown_extra_path;
-                        // Create new instance each time to reset footnote counter per chapter
-                        $parsedown = new ZCR_ParsedownExtra();
-                        $parsedown->setSafeMode(true);
-                        $parsedown->setBreaksEnabled(true);
-                        $html = $parsedown->text($content);
-                    } elseif (file_exists($parsedown_path)) {
-                        require_once $parsedown_path;
-                        // Create new instance each time to reset footnote counter per chapter
-                        $parsedown = new ZCR_Parsedown();
-                        $parsedown->setSafeMode(true);
-                        $parsedown->setBreaksEnabled(true);
-                        $html = $parsedown->text($content);
+                    if (file_exists($michelf_extra_path) && file_exists($michelf_path)) {
+                        if (!class_exists('\Michelf\MarkdownExtra')) {
+                            require_once $michelf_path;
+                            require_once $michelf_extra_path;
+                        }
+                        $parser = new \Michelf\MarkdownExtra();
+                        $parser->no_markup = true;
+                        $parser->hard_wrap = true;
+                        $parser->fn_id_prefix = "fn:";
+
                     } else {
                         // Basic fallback without markdown
                         $html = wpautop(wp_kses_post($content));
@@ -1225,14 +1220,31 @@ class ZipContentReplacer_Enhanced
                 case 'table':
                     $output .= "<!-- wp:table -->\n<figure class=\"wp-block-table\">" . $outerHtml . "</figure>\n<!-- /wp:table -->\n\n";
                     break;
-
                 case 'div':
-                    // Handle footnotes container from ParsedownExtra
+                    // Handle footnotes container from ParsedownExtra/Michelf
                     $class = $node->getAttribute('class');
                     if (strpos($class, 'footnotes') !== false) {
-                        // Output footnotes as raw HTML (no block wrapper needed)
-                        // This renders properly in Fictioneer theme
-                        $output .= $outerHtml . "\n\n";
+                        // Inject Fictioneer Theme Classes robustly
+                        if (strpos($class, 'wp-block-footnotes') === false) {
+                            $node->setAttribute('class', trim($class . ' wp-block-footnotes'));
+                        }
+
+                        // Find the ordered list and add 'footnotes__list' class
+                        foreach ($node->childNodes as $child) {
+                            if ($child->nodeName === 'ol') {
+                                $childClass = $child->getAttribute('class');
+                                if (strpos($childClass, 'footnotes__list') === false) {
+                                    $child->setAttribute('class', trim($childClass . ' footnotes__list'));
+                                }
+                            }
+                        }
+
+                        // Re-save HTML after modifications
+                        $outerHtml = $dom->saveHTML($node);
+
+                        // Output footnotes as Custom HTML block to ensure proper rendering
+                        // and prevent auto-paragraphing or escaping issues
+                        $output .= "<!-- wp:html -->\n" . $outerHtml . "\n<!-- /wp:html -->\n\n";
                     } else {
                         // Other divs - wrap as group block
                         $output .= "<!-- wp:group -->\n" . $outerHtml . "\n<!-- /wp:group -->\n\n";
