@@ -3,7 +3,7 @@
  * Plugin Name: ZIP Content Replacer Enhanced
  * Plugin URI: https://github.com/MarineTL/zip-content-replacer
  * Description: Replaces WordPress post content with ZIP file contents using AJAX batching with progress bar, logging, dry run mode, backup/restore functionality, and advanced features. Designed for Fictioneer theme.
- * Version: 3.2.7
+ * Version: 3.2.8
  * Author: MarineTL
  * Author URI: https://github.com/MarineTL
  * Text Domain: zip-content-replacer
